@@ -42,7 +42,7 @@ rtt-demo-app-rttDemoApi - Registered new api endpoint: /system/hrm/service/rtt-d
 rtt-demo-app-rttDemoApi - Registered new api endpoint: /system/hrm/service/rtt-demo-app/batch
 rtt-demo-app-rttDemoApi - Registered new api endpoint: /system/hrm/service/rtt-demo-app/recipe-map
 rtt-demo-app-rttDemoApi - Registered new api endpoint: /system/hrm/service/rtt-demo-app/recipe
-HRM simulator started — system topic: system/hrm/service/rtt-demo-app/# — data: demo/steelworks/hot-rolling/ — tick: 2000ms
+HRM simulator started — system topic: system/hrm/service/rtt-demo-app/# — data: forge-group/novasteel/hot-rolling/ — tick: 2000ms
 ```
 
 ---
@@ -74,7 +74,7 @@ The `hrm` section controls the simulator:
 
 | Field | Default | Description |
 |---|---|---|
-| `topicBase` | `demo/steelworks/hot-rolling/` | MQTT topic prefix for telemetry data |
+| `topicBase` | `forge-group/novasteel/hot-rolling/` | MQTT topic prefix for telemetry data |
 | `tickIntervalMs` | `2000` | Simulation tick rate in ms |
 | `simulationStartTime` | unset | Optional simulated process start timestamp used for published event time; when unset, published timestamps use the realtime system clock |
 | `simulationSpeed` | `1` | Process-time acceleration factor per wall-clock tick |
@@ -94,6 +94,8 @@ Tracked demo config profiles are available as copyable starting points:
 | `config-smooth.json` | Smoother UI updates | 0.5s tick, 30x process speed, 50% telemetry |
 
 Copy one profile to local `config.json` before starting the simulator. `config.json` remains git-ignored for local credentials and overrides.
+
+The demo namespace is fictional: `forge-group` is the group and `novasteel` the company. No real company or site is represented by the published topics.
 
 Raw simulator MQTT payloads now also carry an explicit `dataGroup` per asset, for example `hrm_pusher_furnace`, `hrm_descaling`, `hrm_stand_1`, and `hrm_warehouse`, so QuestDB can keep asset-level raw data separated instead of growing one mixed table.
 
@@ -242,7 +244,7 @@ curl -s -X POST "http://localhost:8180/api/system/hrm/service/rtt-demo-app/recip
 - `gas-meter/natural-gas/consumption-rate` publishes the current fuel-gas flow while keeping the gas meter identity explicit
 - Sub-states: `HEATING → SOAKING → DONE`
 - Zone overtemperature alarms publish as `alarm` lifecycle states with matching alarm history rows (`ACTIVE → CLEARED`)
-- MQTT topics: `demo/steelworks/hot-rolling/hrm-pusher-furnace/equipment/zone-{1..4}/temperature` etc.
+- MQTT topics: `forge-group/novasteel/hot-rolling/hrm-pusher-furnace/equipment/zone-{1..4}/temperature` etc.
 
 ### Hydraulic Descaling
 - Fixed 30-second water-blast pass (15 ticks)
@@ -250,8 +252,8 @@ curl -s -X POST "http://localhost:8180/api/system/hrm/service/rtt-demo-app/recip
 - OT-facing signals are split across `equipment/pump-1`, `equipment/spray-header`, `fluid-resource/water`, and `fluid-resource/hydraulic-oil`
 - Water resource topics focus on consumable aspects such as temperature and consumption; pressure remains on pump/header equipment
 - The simulator also publishes a live sub-asset under the descaling aggregate:
-  `demo/steelworks/hot-rolling/hrm-descaling/pump-skid-1/equipment/main/{pressure,flow,speed,current,temperature}`
-- MQTT topics: `demo/steelworks/hot-rolling/hrm-descaling/equipment/pump-1/pressure`, `.../fluid-resource/water/total-flow` etc.
+  `forge-group/novasteel/hot-rolling/hrm-descaling/pump-skid-1/equipment/main/{pressure,flow,speed,current,temperature}`
+- MQTT topics: `forge-group/novasteel/hot-rolling/hrm-descaling/equipment/pump-1/pressure`, `.../fluid-resource/water/total-flow` etc.
 
 ### Reversing Rolling Stand
 - 5-pass rolling plan (S355 recipe: 200 mm → 120 → 80 → 50 → 30 → 20 mm)
@@ -259,7 +261,7 @@ curl -s -X POST "http://localhost:8180/api/system/hrm/service/rtt-demo-app/recip
 - Drive speed now follows a simple second-order actuator response instead of an instant setpoint jump
 - Stand telemetry includes speed, force, torque, motor current, hydraulic pressure, lubrication flow, bearing temperature, vibration and roll gap
 - Pass completion remains available as an event, but it is now published under stand equipment telemetry rather than `process-segment`
-- MQTT topics: `demo/steelworks/hot-rolling/hrm-stand-1/equipment/stand-1/speed` etc.
+- MQTT topics: `forge-group/novasteel/hot-rolling/hrm-stand-1/equipment/stand-1/speed` etc.
 
 ### Warehouse / Quality Lab
 - Final thickness is measured from the actual rolling end-state with small metrology noise
@@ -270,7 +272,7 @@ curl -s -X POST "http://localhost:8180/api/system/hrm/service/rtt-demo-app/recip
 - Inspection results include explicit internal fail reasons for testing and API status output
 - Quality facts are published once when the inspection is created, not as repeating live telemetry
 - A one-shot inspection summary event is also published so QuestDB queries can read pass/fail, measured values, and fail reasons from a single history row
-- MQTT topic: `demo/steelworks/hot-rolling/hrm-warehouse/material/slab-001-3/pass-fail` etc.
+- MQTT topic: `forge-group/novasteel/hot-rolling/hrm-warehouse/material/slab-001-3/pass-fail` etc.
 
 ---
 
@@ -293,7 +295,7 @@ curl -s -X POST "http://localhost:8180/api/system/hrm/service/rtt-demo-app/recip
 
   ```ts
   await mqttOutput.publishMqttMessage({
-    topic: "demo/steelworks/hot-rolling/hrm-descaling/",
+    topic: "forge-group/novasteel/hot-rolling/hrm-descaling/",
     asset: "pump-skid-1",
     objectType: "equipment",
     objectId: "main",
@@ -309,9 +311,9 @@ curl -s -X POST "http://localhost:8180/api/system/hrm/service/rtt-demo-app/recip
   ```
 
   This creates
-  `demo/steelworks/hot-rolling/hrm-descaling/pump-skid-1/equipment/main/temperature`.
+  `forge-group/novasteel/hot-rolling/hrm-descaling/pump-skid-1/equipment/main/temperature`.
   QuestDB keeps the existing identity columns with
-  `topic = "demo/steelworks/hot-rolling/hrm-descaling"` and `asset = "pump-skid-1"`;
+  `topic = "forge-group/novasteel/hot-rolling/hrm-descaling"` and `asset = "pump-skid-1"`;
   do not encode the parent asset in `dataGroup`.
   The live simulator publishes this shape continuously for the descaling
   `pump-skid-1` sub-asset. The repo also includes a one-shot example for
@@ -353,7 +355,7 @@ system
                     └── batch
 ```
 
-MQTT telemetry appears under `demo/steelworks/hot-rolling/` as soon as a batch is submitted to the queue.
+MQTT telemetry appears under `forge-group/novasteel/hot-rolling/` as soon as a batch is submitted to the queue.
 
 ---
 

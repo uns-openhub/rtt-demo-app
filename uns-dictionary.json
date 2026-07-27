@@ -1,22 +1,22 @@
 {
   "schemaVersion": 2,
   "assets": {
-    "demo/steelworks/hot-rolling/area": {
+    "forge-group/novasteel/hot-rolling/area": {
       "description": "Hot rolling demo area"
     },
-    "demo/steelworks/hot-rolling/hrm-queue": {
+    "forge-group/novasteel/hot-rolling/hrm-queue": {
       "description": "Production queue"
     },
-    "demo/steelworks/hot-rolling/hrm-pusher-furnace": {
+    "forge-group/novasteel/hot-rolling/hrm-pusher-furnace": {
       "description": "Pusher reheating furnace"
     },
-    "demo/steelworks/hot-rolling/hrm-descaling": {
+    "forge-group/novasteel/hot-rolling/hrm-descaling": {
       "description": "Hydraulic descaling"
     },
-    "demo/steelworks/hot-rolling/hrm-stand-1": {
+    "forge-group/novasteel/hot-rolling/hrm-stand-1": {
       "description": "Reversing rolling stand"
     },
-    "demo/steelworks/hot-rolling/hrm-warehouse": {
+    "forge-group/novasteel/hot-rolling/hrm-warehouse": {
       "description": "Warehouse and quality lab"
     },
     "system/hrm": {

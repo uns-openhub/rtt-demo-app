@@ -19,7 +19,7 @@ const uns = (config as any).uns;
 const output = (config as any).output;
 const infra = (config as any).infra;
 
-const topicBase = ensureTrailingSlash(hrm?.topicBase ?? "demo/steelworks/hot-rolling/");
+const topicBase = ensureTrailingSlash(hrm?.topicBase ?? "forge-group/novasteel/hot-rolling/");
 const parentAsset = hrm?.productionLine?.descaling?.assetId ?? "hrm-descaling";
 const parentTopic = `${topicBase}${parentAsset}/`;
 const subAsset = "pump-skid-1";
