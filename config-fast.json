@@ -23,7 +23,7 @@
     "host": "localhost"
   },
   "hrm": {
-    "topicBase": "demo/steelworks/hot-rolling/",
+    "topicBase": "forge-group/novasteel/hot-rolling/",
     "tickIntervalMs": 1000,
     "simulationSpeed": 30,
     "simulationResolution": 100,
