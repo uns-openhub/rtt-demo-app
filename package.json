@@ -6,11 +6,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/uns-datahub/rtt-demo-app.git"
+    "url": "https://github.com/uns-openhub/rtt-demo-app.git"
   },
-  "homepage": "https://github.com/uns-datahub/rtt-demo-app#readme",
+  "homepage": "https://github.com/uns-openhub/rtt-demo-app#readme",
   "bugs": {
-    "url": "https://github.com/uns-datahub/rtt-demo-app/issues"
+    "url": "https://github.com/uns-openhub/rtt-demo-app/issues"
   },
   "type": "module",
   "engines": {
