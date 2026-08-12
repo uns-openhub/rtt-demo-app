@@ -5,6 +5,7 @@ import { createInterface } from "readline";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import path from "path";
+import { ServiceTokenProvider, type AccessTokenProvider } from "@uns-kit/core";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -12,6 +13,7 @@ export interface HrmCliConfig {
   baseUrl: string;
   processName: string;
   defaultEmail: string;
+  configToken?: string;
 }
 
 const EARLY_REFRESH_MS = 60_000;
@@ -21,12 +23,20 @@ type AuthPayload = {
 };
 
 export function loadConfig(): HrmCliConfig {
-  const raw = JSON.parse(readFileSync(path.join(__dirname, "../config.json"), "utf8"));
-  return {
-    baseUrl: raw.uns.rest as string,
-    processName: raw.uns.processName as string,
-    defaultEmail: (raw.uns.email as string) ?? "",
+  const raw = JSON.parse(readFileSync(path.join(__dirname, "../config.json"), "utf8")) as {
+    uns?: Record<string, unknown>;
   };
+  const uns = raw.uns ?? {};
+  return {
+    baseUrl: uns.rest as string,
+    processName: uns.processName as string,
+    defaultEmail: typeof uns.email === "string" ? uns.email : "",
+    configToken: typeof uns.token === "string" ? uns.token : undefined,
+  };
+}
+
+export function hasConfiguredServiceToken(config: HrmCliConfig): boolean {
+  return Boolean(process.env.UNS_SERVICE_TOKEN_FILE || process.env.UNS_SERVICE_TOKEN || config.configToken);
 }
 
 export async function promptLine(question: string, defaultVal = ""): Promise<string> {
@@ -157,22 +167,35 @@ async function expectAccessToken(res: Response, prefix: string): Promise<string>
 
 export class HrmAuthSession {
   private readonly baseUrl: string;
-  private readonly email: string;
-  private readonly password: string;
-  private accessToken: string;
+  private readonly email?: string;
+  private readonly password?: string;
+  private readonly tokenProvider?: AccessTokenProvider;
+  private accessToken?: string;
   private expiresAtMs: number | null;
   private cookieHeader: string | null;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshInFlight: Promise<string> | null = null;
 
-  private constructor(baseUrl: string, email: string, password: string, accessToken: string, cookieHeader: string | null) {
+  private constructor(
+    baseUrl: string,
+    options: {
+      email?: string;
+      password?: string;
+      accessToken?: string;
+      cookieHeader?: string | null;
+      tokenProvider?: AccessTokenProvider;
+    },
+  ) {
     this.baseUrl = normalizeBaseUrl(baseUrl);
-    this.email = email;
-    this.password = password;
-    this.accessToken = accessToken;
-    this.expiresAtMs = decodeJwtExpiryMs(accessToken);
-    this.cookieHeader = cookieHeader;
-    this.scheduleAutoRefresh();
+    this.email = options.email;
+    this.password = options.password;
+    this.tokenProvider = options.tokenProvider;
+    this.accessToken = options.accessToken;
+    this.expiresAtMs = options.accessToken ? decodeJwtExpiryMs(options.accessToken) : null;
+    this.cookieHeader = options.cookieHeader ?? null;
+    if (!this.tokenProvider) {
+      this.scheduleAutoRefresh();
+    }
   }
 
   static async login(baseUrl: string, email: string, password: string): Promise<HrmAuthSession> {
@@ -184,7 +207,11 @@ export class HrmAuthSession {
     });
     const accessToken = await expectAccessToken(res, "Login failed");
     const cookieHeader = mergeCookies(null, getSetCookieHeaders(res));
-    return new HrmAuthSession(normalizedBaseUrl, email, password, accessToken, cookieHeader);
+    return new HrmAuthSession(normalizedBaseUrl, { email, password, accessToken, cookieHeader });
+  }
+
+  static fromTokenProvider(baseUrl: string, tokenProvider: AccessTokenProvider): HrmAuthSession {
+    return new HrmAuthSession(baseUrl, { tokenProvider });
   }
 
   close(): void {
@@ -223,6 +250,19 @@ export class HrmAuthSession {
   }
 
   private async ensureFreshToken(force = false): Promise<string> {
+    if (this.tokenProvider) {
+      const token = await this.tokenProvider.getAccessToken();
+      if (!token) {
+        throw new Error("No service token available. Set UNS_SERVICE_TOKEN_FILE, UNS_SERVICE_TOKEN, or uns.token.");
+      }
+      this.accessToken = token;
+      this.expiresAtMs = decodeJwtExpiryMs(token);
+      return token;
+    }
+
+    if (!this.accessToken) {
+      return await this.refreshAccessToken();
+    }
     if (!force && !this.shouldRefreshSoon()) {
       return this.accessToken;
     }
@@ -268,11 +308,11 @@ export class HrmAuthSession {
 
   private async request(method: "GET" | "POST", path: string, body?: unknown): Promise<unknown> {
     const normalizedPath = path.replace(/^\/+/, "");
-    await this.ensureFreshToken();
-    let response = await this.fetchAuthorized(method, normalizedPath, body);
+    let accessToken = await this.ensureFreshToken();
+    let response = await this.fetchAuthorized(method, normalizedPath, accessToken, body);
     if (response.status === 401) {
-      await this.ensureFreshToken(true);
-      response = await this.fetchAuthorized(method, normalizedPath, body);
+      accessToken = await this.ensureFreshToken(true);
+      response = await this.fetchAuthorized(method, normalizedPath, accessToken, body);
     }
     if (!response.ok) {
       throw await describeHttpError(`${method} ${normalizedPath} failed`, response);
@@ -280,9 +320,14 @@ export class HrmAuthSession {
     return await readJson<unknown>(response);
   }
 
-  private async fetchAuthorized(method: "GET" | "POST", path: string, body?: unknown): Promise<Response> {
+  private async fetchAuthorized(
+    method: "GET" | "POST",
+    path: string,
+    accessToken: string,
+    body?: unknown,
+  ): Promise<Response> {
     const headers: Record<string, string> = {
-      Authorization: `Bearer ${this.accessToken}`,
+      Authorization: `Bearer ${accessToken}`,
     };
     if (method === "POST") {
       headers["Content-Type"] = "application/json";
@@ -297,4 +342,11 @@ export class HrmAuthSession {
 
 export async function createAuthSession(baseUrl: string, email: string, password: string): Promise<HrmAuthSession> {
   return await HrmAuthSession.login(baseUrl, email, password);
+}
+
+export function createServiceTokenSession(config: HrmCliConfig): HrmAuthSession {
+  return HrmAuthSession.fromTokenProvider(
+    config.baseUrl,
+    new ServiceTokenProvider({ configToken: config.configToken }),
+  );
 }

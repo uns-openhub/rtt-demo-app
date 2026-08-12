@@ -4,7 +4,15 @@
  *
  * Usage:  pnpm run hrm:submit
  */
-import { createAuthSession, loadConfig, promptLine, promptPassword, type HrmAuthSession } from "./hrm-auth.js";
+import {
+  createAuthSession,
+  createServiceTokenSession,
+  hasConfiguredServiceToken,
+  loadConfig,
+  promptLine,
+  promptPassword,
+  type HrmAuthSession,
+} from "./hrm-auth.js";
 
 function formatMaterialId(rawInput: string): string {
   const trimmed = rawInput.trim();
@@ -51,18 +59,20 @@ const cfg = loadConfig();
 console.log("\n  HRM — Submit Batch");
 console.log("  ──────────────────────────────────────────\n");
 
-// ── Credentials ──────────────────────────────────────────────────────────────
-const email = await promptLine("Email", cfg.defaultEmail);
-const password = await promptPassword("Password");
-
 const auth: HrmAuthSession = await (async () => {
   try {
+    if (hasConfiguredServiceToken(cfg)) {
+      console.log("  Using configured service token\n");
+      return createServiceTokenSession(cfg);
+    }
+    const email = await promptLine("Email", cfg.defaultEmail);
+    const password = await promptPassword("Password");
     return await createAuthSession(cfg.baseUrl, email, password);
   } catch (e) {
     fail((e as Error).message);
   }
 })();
-console.log("  ✓ Logged in\n");
+console.log("  ✓ Authenticated\n");
 
 // ── Batch details ─────────────────────────────────────────────────────────────
 const recipeId   = await promptLine("Recipe ID",   "s355-20mm");

@@ -21,7 +21,7 @@ async function main() {
   }) as UnsProxyProcessWithApi;
 
   const mqttOutput = await unsProxyProcess.createUnsMqttProxy(
-    config.output?.host!,
+    config.output?.host ?? config.infra.host!,
     "templateUnsRttOutput",
     config.uns.instanceMode!,
     config.uns.handover!,
