@@ -10,7 +10,8 @@ This repository is public source software licensed under the [MIT License](LICEN
 
 - A running UNS instance (MQTT broker + controller) at `localhost`
 - A local `config.json` copied from a tracked example
-- `UNS_PASSWORD` set in the environment or a local `.env`
+- A development machine token in an untracked local `.env` when running the
+  simulator directly on the host
 
 ---
 
@@ -20,8 +21,8 @@ This repository is public source software licensed under the [MIT License](LICEN
 # Install dependencies
 pnpm install
 
-# Prepare local configuration
-cp config-example.json config.json
+# Prepare local host-development configuration
+cp config-development-host.json config.json
 cp .env.example .env
 
 # Build
@@ -49,26 +50,20 @@ HRM simulator started — system topic: system/hrm/service/rtt-demo-app/# — da
 
 ## Configuration
 
-Edit `config.json` to match your environment:
+The committed runtime profiles deliberately contain no credentials, customer
+hosts, or local controller identity. Copy the one that matches where the
+process runs, then adapt only the untracked `config.json` if needed:
 
-```json
-{
-  "uns": {
-    "graphql": "http://localhost:8180/graphql",
-    "rest":    "http://localhost:8180/api",
-    "processName": "rtt-demo-app",
-    "instanceMode": "wait",
-    "handover": true,
-    "email": "user@example.com",
-    "password": {
-      "provider": "env",
-      "key": "UNS_PASSWORD"
-    }
-  },
-  "infra":  { "host": "localhost" },
-  "output": { "host": "localhost" }
-}
-```
+| Profile | Use it when | MQTT | Credential source |
+|---|---|---|---|
+| `config-development-host.json` | Running `pnpm run dev` directly on the host | `localhost` | `.env` → `UNS_SERVICE_TOKEN` |
+| `config-development-podman.json` | Deploying through a local Podman OpenHub controller | `mosquitto` | Controller-managed `UNS_SERVICE_TOKEN_FILE` |
+| `config-production.json` | Creating a production controller instance | `mosquitto` | Controller-managed token file or approved secret provider |
+
+For direct development, `.env.example` also shows the required
+`UNS_CONTROLLER_NAME` and `UNS_CONTROLLER_PUBLIC_BASE` values so the service
+can publish route metadata. Controller-managed PM2 instances receive them
+automatically.
 
 The `hrm` section controls the simulator:
 
@@ -85,15 +80,17 @@ The `hrm` section controls the simulator:
 
 When `simulationStartTime` is omitted, published MQTT and status/API timestamps follow realtime wall clock. When `simulationStartTime` is set, timestamps follow simulated process time from that anchor. `simulationSpeed` changes how fast physics and station progress advance per wall-clock tick; recipe values remain in normal process units.
 
-Tracked demo config profiles are available as copyable starting points:
+The development profiles use a 1s tick, 30x process speed, and full telemetry.
+Tune those values only in your untracked `config.json`; production deployments
+normally use an instance-specific controller configuration.
 
-| File | Use case | Timing |
-|---|---|---|
-| `config-fast.json` | Default demo profile | 1s tick, 30x process speed, full telemetry |
-| `config-faster.json` | Short demos with faster material flow | 1s tick, 60x process speed, 50% telemetry |
-| `config-smooth.json` | Smoother UI updates | 0.5s tick, 30x process speed, 50% telemetry |
+## Release
 
-Copy one profile to local `config.json` before starting the simulator. `config.json` remains git-ignored for local credentials and overrides.
+`package.json` is the version source for this public OpenHub add-on. CI
+validates source changes; after a versioned merge, create the matching `vX.Y.Z`
+tag and GitHub Release through the repository's separate release procedure.
+The controller's public catalog in `releases` mode intentionally reads GitHub
+Releases rather than bare tags.
 
 The demo namespace is fictional: `forge-group` is the group and `novasteel` the company. No real company or site is represented by the published topics.
 
@@ -107,13 +104,13 @@ All control endpoints live under `system/hrm/service/{processName}/`:
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `http://localhost:8180/api/system/hrm/service/rtt-demo-app/batch` | Submit a new batch |
-| `GET`  | `http://localhost:8180/api/system/hrm/service/rtt-demo-app/status` | Full production line state |
-| `GET`  | `http://localhost:8180/api/system/hrm/service/rtt-demo-app/config` | Runtime simulator timing config |
-| `GET`  | `http://localhost:8180/api/system/hrm/service/rtt-demo-app/batch?batchId=:id` | Single batch detail + quality result |
-| `GET`  | `http://localhost:8180/api/system/hrm/service/rtt-demo-app/recipe-map` | Full recipe map |
-| `GET`  | `http://localhost:8180/api/system/hrm/service/rtt-demo-app/recipe?recipeId=:id` | Single recipe detail |
-| `POST` | `http://localhost:8180/api/system/hrm/service/rtt-demo-app/recipe?recipeId=:id` | Update furnace recipe values in memory |
+| `POST` | `http://localhost:3200/api/system/hrm/service/rtt-demo-app/batch` | Submit a new batch |
+| `GET`  | `http://localhost:3200/api/system/hrm/service/rtt-demo-app/status` | Full production line state |
+| `GET`  | `http://localhost:3200/api/system/hrm/service/rtt-demo-app/config` | Runtime simulator timing config |
+| `GET`  | `http://localhost:3200/api/system/hrm/service/rtt-demo-app/batch?batchId=:id` | Single batch detail + quality result |
+| `GET`  | `http://localhost:3200/api/system/hrm/service/rtt-demo-app/recipe-map` | Full recipe map |
+| `GET`  | `http://localhost:3200/api/system/hrm/service/rtt-demo-app/recipe?recipeId=:id` | Single recipe detail |
+| `POST` | `http://localhost:3200/api/system/hrm/service/rtt-demo-app/recipe?recipeId=:id` | Update furnace recipe values in memory |
 
 All requests require `Authorization: Bearer <token>` — see Authentication below.
 
@@ -121,15 +118,13 @@ All requests require `Authorization: Bearer <token>` — see Authentication belo
 
 ## Authentication
 
-All API endpoints require a Bearer JWT token. Get one from the UNS instance using the credentials from `config.json`:
+All API endpoints require a Bearer JWT token. Direct development uses the
+machine token from `.env`; controller-managed instances read the mounted token
+file. The `hrm:submit` and `hrm:watch` scripts use that token automatically and
+only prompt for email/password when no machine token has been configured.
 
 ```bash
-export UNS_PASSWORD='<your-password>'
-TOKEN=$(curl -s -X POST http://localhost:8180/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d "$(jq -nc --arg email 'user@example.com' --arg password "$UNS_PASSWORD" \
-    '{email:$email,password:$password}')" \
-  | jq -r '.accessToken')
+TOKEN="$UNS_SERVICE_TOKEN"
 ```
 
 Then pass it as a header on every request:
@@ -138,7 +133,9 @@ Then pass it as a header on every request:
 -H "Authorization: Bearer $TOKEN"
 ```
 
-> The token expires after ~30 minutes — re-run the login command to refresh it.
+Never add a token, email, or password to a committed profile. Operators can use
+their own short-lived login token instead of a development machine token for
+manual API calls.
 
 ---
 
@@ -150,37 +147,35 @@ Then pass it as a header on every request:
 # Terminal 1 — start the simulator
 pnpm run dev
 
-# Terminal 2 — submit a batch (prompts for credentials, recipe, material)
+# Terminal 2 — submit a batch (uses service token, or prompts when absent)
 pnpm run hrm:submit
 
-# Terminal 3 — live dashboard (prompts for credentials, then auto-refreshes)
+# Terminal 3 — live dashboard
 pnpm run hrm:watch
 ```
 
-Both scripts read the UNS URL and default credentials from `config.json` automatically. Password input is masked with `*`.
-They also refresh access tokens automatically when the current token is close to expiry.
+Both scripts read the controller URL from `config.json`. A configured service
+token is read for every request, so a mounted, rotated token is picked up
+without restarting the script. Without one, password input is masked and the
+user session is refreshed automatically.
 
 ---
 
 ### Using curl manually
 
-> The simulator API is proxied through the UNS controller at `localhost:8180`, so you don't need to know the dynamic port.
+> The simulator API is proxied through the local UNS controller at
+> `localhost:3200`, so you don't need to know the dynamic port.
 
 ### 1. Get a token
 
 ```bash
-export UNS_PASSWORD='<your-password>'
-TOKEN=$(curl -s -X POST http://localhost:8180/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d "$(jq -nc --arg email 'user@example.com' --arg password "$UNS_PASSWORD" \
-    '{email:$email,password:$password}')" \
-  | jq -r '.accessToken')
+TOKEN="$UNS_SERVICE_TOKEN"
 ```
 
 ### 2. Submit a batch
 
 ```bash
-curl -s -X POST http://localhost:8180/api/system/hrm/service/rtt-demo-app/batch \
+curl -s -X POST http://localhost:3200/api/system/hrm/service/rtt-demo-app/batch \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{ "recipeId": "s355-20mm", "materialId": "slab-001", "quantity": 1 }'
@@ -202,7 +197,7 @@ Response (accepted):
 ### 3. Watch the production line
 
 ```bash
-curl -s http://localhost:8180/api/system/hrm/service/rtt-demo-app/status \
+curl -s http://localhost:3200/api/system/hrm/service/rtt-demo-app/status \
   -H "Authorization: Bearer $TOKEN" | jq .
 ```
 
@@ -212,19 +207,19 @@ The batch advances automatically every 2 seconds:
 ### 4. Fetch final quality result
 
 ```bash
-curl -s "http://localhost:8180/api/system/hrm/service/rtt-demo-app/batch?batchId=550e8400-..." \
+curl -s "http://localhost:3200/api/system/hrm/service/rtt-demo-app/batch?batchId=550e8400-..." \
   -H "Authorization: Bearer $TOKEN" | jq .warehouse
 ```
 
 ### 5. Inspect and update a recipe online
 
 ```bash
-curl -s http://localhost:8180/api/system/hrm/service/rtt-demo-app/recipe-map \
+curl -s http://localhost:3200/api/system/hrm/service/rtt-demo-app/recipe-map \
   -H "Authorization: Bearer $TOKEN" | jq .
 ```
 
 ```bash
-curl -s -X POST "http://localhost:8180/api/system/hrm/service/rtt-demo-app/recipe?recipeId=s355-20mm" \
+curl -s -X POST "http://localhost:3200/api/system/hrm/service/rtt-demo-app/recipe?recipeId=s355-20mm" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{ "furnace": { "pusherPaceMin": 18, "targetTempC": 1185, "zones": [ { "zoneId": 1, "setpointC": 920 }, { "zoneId": 2, "setpointC": 1110 }, { "zoneId": 3, "setpointC": 1190 }, { "zoneId": 4, "setpointC": 1180 } ] } }' | jq .

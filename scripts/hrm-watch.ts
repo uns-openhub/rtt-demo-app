@@ -4,7 +4,15 @@
  *
  * Usage:  pnpm run hrm:watch
  */
-import { createAuthSession, loadConfig, promptLine, promptPassword, type HrmAuthSession } from "./hrm-auth.js";
+import {
+  createAuthSession,
+  createServiceTokenSession,
+  hasConfiguredServiceToken,
+  loadConfig,
+  promptLine,
+  promptPassword,
+  type HrmAuthSession,
+} from "./hrm-auth.js";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import path from "path";
@@ -278,12 +286,16 @@ const recipeMap = loadRecipeMapFromConfig();
 console.log("\n  HRM — Watch Production Line");
 console.log("  ──────────────────────────────────────────\n");
 
-const email = await promptLine("Email", cfg.defaultEmail);
-const password = await promptPassword("Password");
-
 let auth: HrmAuthSession;
 try {
-  auth = await createAuthSession(cfg.baseUrl, email, password);
+  if (hasConfiguredServiceToken(cfg)) {
+    console.log("  Using configured service token\n");
+    auth = createServiceTokenSession(cfg);
+  } else {
+    const email = await promptLine("Email", cfg.defaultEmail);
+    const password = await promptPassword("Password");
+    auth = await createAuthSession(cfg.baseUrl, email, password);
+  }
 } catch (e) {
   console.error(`\n  ✗ ${(e as Error).message}`);
   process.exit(1);

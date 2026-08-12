@@ -1,32 +1,22 @@
 {
   "uns": {
-    "graphql": "http://localhost:8180/graphql",
-    "rest": "http://localhost:8180/api",
+    "graphql": "http://localhost:3200/graphql",
+    "rest": "http://localhost:3200/api",
     "processName": "rtt-demo-app",
     "instanceMode": "wait",
     "handover": true,
-    "jwksWellKnownUrl": "http://localhost:8180/api/.well-known/jwks.json",
-    "kidWellKnownUrl": "http://localhost:8180/api/.well-known/kid",
-    "email": "user@example.com",
-    "password": {
-      "provider": "env",
-      "key": "UNS_PASSWORD"
-    }
+    "jwksWellKnownUrl": "http://localhost:3200/api/.well-known/jwks.json",
+    "kidWellKnownUrl": "http://localhost:3200/api/.well-known/kid",
+    "env": "dev"
   },
   "infra": {
     "host": "localhost"
   },
-  "output": {
-    "host": "localhost"
-  },
-  "input": {
-    "host": "localhost"
-  },
   "hrm": {
     "topicBase": "forge-group/novasteel/hot-rolling/",
-    "tickIntervalMs": 500,
+    "tickIntervalMs": 1000,
     "simulationSpeed": 30,
-    "simulationResolution": 50,
+    "simulationResolution": 100,
     "productionLine": {
       "furnace": {
         "assetId": "hrm-pusher-furnace",

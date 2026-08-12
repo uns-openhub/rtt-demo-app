@@ -63,7 +63,7 @@ const unsProxyProcess = new UnsProxyProcess(infra?.host ?? "localhost", {
   processName,
 });
 const mqttOutput = await unsProxyProcess.createUnsMqttProxy(
-  output?.host ?? "localhost",
+  output?.host ?? infra?.host ?? "localhost",
   "subassetExampleOutput",
   "force",
   false,
