@@ -20,21 +20,21 @@
     "productionLine": {
       "furnace": {
         "assetId": "hrm-pusher-furnace",
-        "description": "Potisna peč (reheating furnace)",
+        "description": "Pusher reheating furnace",
         "zones": 4,
         "maxTempC": 1280,
         "gasConsumptionNm3PerHour": 800
       },
       "descaling": {
         "assetId": "hrm-descaling",
-        "description": "Hidravlično odstranjevanje okajne plasti",
+        "description": "Hydraulic descaling",
         "nominalPressureBar": 200,
         "nominalFlowM3PerHour": 12,
         "durationMin": 5
       },
       "rollingStand": {
         "assetId": "hrm-stand-1",
-        "description": "Reverzirno valjarsko ogrodje",
+        "description": "Reversing rolling stand",
         "nominalSpeedMps": 2.5,
         "maxMotorPowerKw": 3500,
         "maxForceKn": 18000,
@@ -42,7 +42,7 @@
       },
       "warehouse": {
         "assetId": "hrm-warehouse",
-        "description": "Skladišče in laboratorij kakovosti"
+        "description": "Warehouse and quality laboratory"
       }
     },
     "recipes": [
