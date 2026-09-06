@@ -16,6 +16,13 @@ const profiles = [
   { file: "config-production.json", env: "prod", mqttHost: "mosquitto" },
 ] as const;
 
+const expectedProductionLineDescriptions = {
+  furnace: "Pusher reheating furnace",
+  descaling: "Hydraulic descaling",
+  rollingStand: "Reversing rolling stand",
+  warehouse: "Warehouse and quality laboratory",
+} as const;
+
 test("configuration profiles are schema-valid, topology-specific, and credential-free", () => {
   for (const profile of profiles) {
     const config = JSON.parse(fs.readFileSync(path.join(repoRoot, profile.file), "utf8"));
@@ -27,5 +34,11 @@ test("configuration profiles are schema-valid, topology-specific, and credential
     assert.equal("password" in config.uns, false);
     assert.equal("input" in config, false);
     assert.equal("output" in config, false);
+    assert.deepEqual(
+      Object.fromEntries(
+        Object.entries(config.hrm.productionLine).map(([station, definition]) => [station, definition.description]),
+      ),
+      expectedProductionLineDescriptions,
+    );
   }
 });
