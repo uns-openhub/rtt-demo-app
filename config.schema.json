@@ -206,6 +206,11 @@
               "default": true,
               "type": "boolean"
             },
+            "handoverProtocol": {
+              "description": "Opt-in controller-correlated MQTT handover protocol.",
+              "type": "string",
+              "const": "correlated-v1"
+            },
             "supervisor": {
               "type": "object",
               "properties": {
@@ -2007,6 +2012,33 @@
                     "description": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "identity": {
+                      "type": "object",
+                      "properties": {
+                        "providerId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "externalSystem": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "externalType": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "externalId": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "providerId",
+                        "externalSystem",
+                        "externalType",
+                        "externalId"
+                      ]
                     }
                   },
                   "required": [
@@ -2024,6 +2056,33 @@
                     "description": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "identity": {
+                      "type": "object",
+                      "properties": {
+                        "providerId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "externalSystem": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "externalType": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "externalId": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "providerId",
+                        "externalSystem",
+                        "externalType",
+                        "externalId"
+                      ]
                     },
                     "zones": {
                       "type": "integer",
@@ -2058,6 +2117,33 @@
                       "type": "string",
                       "minLength": 1
                     },
+                    "identity": {
+                      "type": "object",
+                      "properties": {
+                        "providerId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "externalSystem": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "externalType": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "externalId": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "providerId",
+                        "externalSystem",
+                        "externalType",
+                        "externalId"
+                      ]
+                    },
                     "nominalPressureBar": {
                       "type": "number",
                       "exclusiveMinimum": 0
@@ -2089,6 +2175,33 @@
                     "description": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "identity": {
+                      "type": "object",
+                      "properties": {
+                        "providerId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "externalSystem": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "externalType": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "externalId": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "providerId",
+                        "externalSystem",
+                        "externalType",
+                        "externalId"
+                      ]
                     },
                     "nominalSpeedMps": {
                       "type": "number",
@@ -2126,6 +2239,33 @@
                     "description": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "identity": {
+                      "type": "object",
+                      "properties": {
+                        "providerId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "externalSystem": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "externalType": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "externalId": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "providerId",
+                        "externalSystem",
+                        "externalType",
+                        "externalId"
+                      ]
                     }
                   },
                   "required": [

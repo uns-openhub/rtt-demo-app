@@ -48,40 +48,41 @@ const qualitySpecSchema = z.object({
   surfaceGrade: z.string().min(1),
 });
 
-const furnaceConfigSchema = z.object({
+const assetIdentitySchema = z.object({
+  providerId: z.string().min(1),
+  externalSystem: z.string().min(1),
+  externalType: z.string().min(1),
+  externalId: z.string().min(1),
+});
+
+const assetConfigSchema = z.object({
   assetId: z.string().min(1),
   description: z.string().min(1),
+  identity: assetIdentitySchema.optional(),
+});
+
+const furnaceConfigSchema = assetConfigSchema.extend({
   zones: z.number().int().positive(),
   maxTempC: z.number().positive(),
   gasConsumptionNm3PerHour: z.number().positive(),
 });
 
-const descalingConfigSchema = z.object({
-  assetId: z.string().min(1),
-  description: z.string().min(1),
+const descalingConfigSchema = assetConfigSchema.extend({
   nominalPressureBar: z.number().positive(),
   nominalFlowM3PerHour: z.number().positive(),
   durationMin: z.number().positive(),
 });
 
-const rollingStandConfigSchema = z.object({
-  assetId: z.string().min(1),
-  description: z.string().min(1),
+const rollingStandConfigSchema = assetConfigSchema.extend({
   nominalSpeedMps: z.number().positive(),
   maxMotorPowerKw: z.number().positive(),
   maxForceKn: z.number().positive(),
   durationMinPerPass: z.number().positive(),
 });
 
-const warehouseConfigSchema = z.object({
-  assetId: z.string().min(1),
-  description: z.string().min(1),
-});
+const warehouseConfigSchema = assetConfigSchema;
 
-const queueConfigSchema = z.object({
-  assetId: z.string().min(1),
-  description: z.string().min(1),
-});
+const queueConfigSchema = assetConfigSchema;
 
 const hrmSchema = z.object({
   topicBase: z.string().min(1),
