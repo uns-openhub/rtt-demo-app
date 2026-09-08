@@ -46,26 +46,33 @@ export interface QualitySpec {
 
 // ─── Production Line Config ───────────────────────────────────────────────────
 
-export interface FurnaceConfig {
+export interface AssetIdentityConfig {
+  providerId: string;
+  externalSystem: string;
+  externalType: string;
+  externalId: string;
+}
+
+export interface AssetConfig {
   assetId: string;
   description: string;
+  identity?: AssetIdentityConfig | undefined;
+}
+
+export interface FurnaceConfig extends AssetConfig {
   zones: number;
   maxTempC: number;
   gasConsumptionNm3PerHour: number;
 }
 
-export interface DescalingConfig {
-  assetId: string;
-  description: string;
+export interface DescalingConfig extends AssetConfig {
   nominalPressureBar: number;
   nominalFlowM3PerHour: number;
   /** Real-world duration of a descaling pass in minutes (e.g. 5). Scaled by simulationSpeed. */
   durationMin: number;
 }
 
-export interface RollingStandConfig {
-  assetId: string;
-  description: string;
+export interface RollingStandConfig extends AssetConfig {
   nominalSpeedMps: number;
   maxMotorPowerKw: number;
   maxForceKn: number;
@@ -73,15 +80,9 @@ export interface RollingStandConfig {
   durationMinPerPass: number;
 }
 
-export interface WarehouseConfig {
-  assetId: string;
-  description: string;
-}
+export interface WarehouseConfig extends AssetConfig {}
 
-export interface QueueConfig {
-  assetId: string;
-  description: string;
-}
+export interface QueueConfig extends AssetConfig {}
 
 export interface ProductionLineConfig {
   queue?: QueueConfig | undefined;

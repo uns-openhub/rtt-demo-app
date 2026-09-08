@@ -13,6 +13,8 @@ export interface ProjectAppConfig {
         /** Process name used in MQTT topics and logs. */
         processName: string;
         handover?: boolean;
+        /** Opt-in controller-correlated MQTT handover protocol. */
+        handoverProtocol?: "correlated-v1" | undefined;
         /** Optional PM2/controller supervisor guard settings for this RTT instance. */
         supervisor?: {
             /** Enable controller/PM2 supervisor handling for this RTT instance. */
@@ -164,10 +166,22 @@ export interface ProjectAppConfig {
             queue?: {
                 assetId: string;
                 description: string;
+                identity?: {
+                    providerId: string;
+                    externalSystem: string;
+                    externalType: string;
+                    externalId: string;
+                } | undefined;
             } | undefined;
             furnace: {
                 assetId: string;
                 description: string;
+                identity?: {
+                    providerId: string;
+                    externalSystem: string;
+                    externalType: string;
+                    externalId: string;
+                } | undefined;
                 zones: number;
                 maxTempC: number;
                 gasConsumptionNm3PerHour: number;
@@ -175,6 +189,12 @@ export interface ProjectAppConfig {
             descaling: {
                 assetId: string;
                 description: string;
+                identity?: {
+                    providerId: string;
+                    externalSystem: string;
+                    externalType: string;
+                    externalId: string;
+                } | undefined;
                 nominalPressureBar: number;
                 nominalFlowM3PerHour: number;
                 durationMin: number;
@@ -182,6 +202,12 @@ export interface ProjectAppConfig {
             rollingStand: {
                 assetId: string;
                 description: string;
+                identity?: {
+                    providerId: string;
+                    externalSystem: string;
+                    externalType: string;
+                    externalId: string;
+                } | undefined;
                 nominalSpeedMps: number;
                 maxMotorPowerKw: number;
                 maxForceKn: number;
@@ -190,6 +216,12 @@ export interface ProjectAppConfig {
             warehouse: {
                 assetId: string;
                 description: string;
+                identity?: {
+                    providerId: string;
+                    externalSystem: string;
+                    externalType: string;
+                    externalId: string;
+                } | undefined;
             };
         };
         recipes: {

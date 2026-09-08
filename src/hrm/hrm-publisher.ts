@@ -1,12 +1,14 @@
 import type { BatchStage, DescalingPhysicsState, FurnacePhysicsState, HrmBatch, RollingPhysicsState } from "./hrm-types.js";
 import type UnsMqttProxy from "@uns-kit/core/uns-mqtt/uns-mqtt-proxy.js";
 import type {
+  IMqttPublishRequest,
   IUnsTableColumn,
   IUnsTableColumns,
 } from "@uns-kit/core/uns/uns-interfaces.js";
 import { UnsPacket } from "@uns-kit/core/uns/uns-packet.js";
 import { GeneratedAttributes, GeneratedObjectTypes } from "../uns/uns-dictionary.generated.js";
 import { GeneratedPhysicalMeasurements } from "../uns/uns-measurements.generated.js";
+import type { AssetIdentityPublicationProvider } from "./asset-identity-publication.js";
 
 type InternalTableColumn = IUnsTableColumn & { name: string };
 
@@ -152,7 +154,20 @@ export interface IHrmTransport {
 export class MqttHrmTransport implements IHrmTransport {
   constructor(
     private readonly mqttOutput: UnsMqttProxy,
-    private readonly telemetryIntervalMs: number) {}
+    private readonly telemetryIntervalMs: number,
+    private readonly identityProvider?: AssetIdentityPublicationProvider,
+  ) {}
+
+  private async publishMqttMessage(message: IMqttPublishRequest): Promise<void> {
+    const identity = await this.identityProvider?.forAsset(
+      message.asset,
+      message.topic,
+    );
+    await this.mqttOutput.publishMqttMessage({
+      ...message,
+      ...(identity ?? {}),
+    });
+  }
 
   private materialObjectId(batch: HrmBatch, stage: BatchStage = batch.stage): string {
     const index = MATERIAL_STAGE_INDEX[stage] ?? 0;
@@ -227,7 +242,7 @@ export class MqttHrmTransport implements IHrmTransport {
     for (const previousMaterialObjectId of previousMaterialObjectIds) {
       const attribute = this.materialRelationshipEvidenceAttribute(batch, time, dataGroup, previousMaterialObjectId);
       if (!attribute) continue;
-      await this.mqttOutput.publishMqttMessage({
+      await this.publishMqttMessage({
         topic: topicBase,
         asset: assetId,
         assetDescription,
@@ -323,7 +338,7 @@ export class MqttHrmTransport implements IHrmTransport {
       ? this.materialRelationshipEvidenceAttribute(batch, time, dataGroup)
       : undefined;
 
-    await this.mqttOutput.publishMqttMessage({
+    await this.publishMqttMessage({
       topic: topicBase,
       asset: assetId,
       assetDescription,
@@ -359,7 +374,7 @@ export class MqttHrmTransport implements IHrmTransport {
       stage: batch?.stage ?? "EMPTY",
     };
 
-    await this.mqttOutput.publishMqttMessage({
+    await this.publishMqttMessage({
       topic: topicBase,
       asset: assetId,
       assetDescription,
@@ -394,7 +409,7 @@ export class MqttHrmTransport implements IHrmTransport {
     const virtualGroup = this.resolveVirtualGroup(assetId, { virtualGroup: "asset" });
     await this.publishFurnaceSnapshot(assetId, topicBase, state, time);
 
-    await this.mqttOutput.publishMqttMessage({
+    await this.publishMqttMessage({
       topic: topicBase,
       asset: assetId,
       assetDescription: PUSHER_FURNACE_ASSET_DESCRIPTION,
@@ -419,7 +434,7 @@ export class MqttHrmTransport implements IHrmTransport {
   private async publishFurnaceSnapshot(assetId: string, topicBase: string, state: FurnacePhysicsState, time: string): Promise<void> {
     const dataGroup = this.resolveDataGroup(assetId, { dataGroup: "asset" });
     for (const zone of state.zones) {
-      await this.mqttOutput.publishMqttMessage({
+      await this.publishMqttMessage({
         topic: topicBase,
         asset: assetId,
         assetDescription: PUSHER_FURNACE_ASSET_DESCRIPTION,
@@ -454,7 +469,7 @@ export class MqttHrmTransport implements IHrmTransport {
       });
     }
 
-    await this.mqttOutput.publishMqttMessage({
+    await this.publishMqttMessage({
       topic: topicBase,
       asset: assetId,
       assetDescription: PUSHER_FURNACE_ASSET_DESCRIPTION,
@@ -476,7 +491,7 @@ export class MqttHrmTransport implements IHrmTransport {
       ],
     });
 
-    await this.mqttOutput.publishMqttMessage({
+    await this.publishMqttMessage({
       topic: topicBase,
       asset: assetId,
       assetDescription: PUSHER_FURNACE_ASSET_DESCRIPTION,
@@ -498,7 +513,7 @@ export class MqttHrmTransport implements IHrmTransport {
       ],
     });
 
-    await this.mqttOutput.publishMqttMessage({
+    await this.publishMqttMessage({
       topic: topicBase,
       asset: assetId,
       assetDescription: PUSHER_FURNACE_ASSET_DESCRIPTION,
@@ -515,7 +530,7 @@ export class MqttHrmTransport implements IHrmTransport {
       ],
     });
 
-    await this.mqttOutput.publishMqttMessage({
+    await this.publishMqttMessage({
       topic: topicBase,
       asset: assetId,
       assetDescription: PUSHER_FURNACE_ASSET_DESCRIPTION,
@@ -538,7 +553,7 @@ export class MqttHrmTransport implements IHrmTransport {
       ],
     });
 
-    await this.mqttOutput.publishMqttMessage({
+    await this.publishMqttMessage({
       topic: topicBase,
       asset: assetId,
       assetDescription: PUSHER_FURNACE_ASSET_DESCRIPTION,
@@ -566,7 +581,7 @@ export class MqttHrmTransport implements IHrmTransport {
   private async publishDescalingSnapshot(assetId: string, topicBase: string, state: DescalingPhysicsState, time: string): Promise<void> {
     const dataGroup = this.resolveDataGroup(assetId, { dataGroup: "asset" });
 
-    await this.mqttOutput.publishMqttMessage({
+    await this.publishMqttMessage({
       topic: topicBase,
       asset: assetId,
       assetDescription: "Hidravlično odstranjevanje okajne plasti",
@@ -600,7 +615,7 @@ export class MqttHrmTransport implements IHrmTransport {
       ],
     });
 
-    await this.mqttOutput.publishMqttMessage({
+    await this.publishMqttMessage({
       topic: topicBase,
       asset: assetId,
       assetDescription: "Hidravlično odstranjevanje okajne plasti",
@@ -628,7 +643,7 @@ export class MqttHrmTransport implements IHrmTransport {
       ],
     });
 
-    await this.mqttOutput.publishMqttMessage({
+    await this.publishMqttMessage({
       topic: topicBase,
       asset: assetId,
       assetDescription: "Hidravlično odstranjevanje okajne plasti",
@@ -659,7 +674,7 @@ export class MqttHrmTransport implements IHrmTransport {
       ],
     });
 
-    await this.mqttOutput.publishMqttMessage({
+    await this.publishMqttMessage({
       topic: topicBase,
       asset: assetId,
       assetDescription: "Hidravlično odstranjevanje okajne plasti",
@@ -696,7 +711,7 @@ export class MqttHrmTransport implements IHrmTransport {
     state: DescalingPhysicsState,
     time: string,
   ): Promise<void> {
-    await this.mqttOutput.publishMqttMessage({
+    await this.publishMqttMessage({
       topic: this.childAssetTopic(topicBase, parentAssetId),
       asset: DESCALING_PUMP_SKID_ASSET_ID,
       assetDescription: DESCALING_PUMP_SKID_DESCRIPTION,
@@ -748,7 +763,7 @@ export class MqttHrmTransport implements IHrmTransport {
   private async publishRollingSnapshot(assetId: string, topicBase: string, state: RollingPhysicsState, time: string): Promise<void> {
     const dataGroup = this.resolveDataGroup(assetId, { dataGroup: "asset" });
 
-    await this.mqttOutput.publishMqttMessage({
+    await this.publishMqttMessage({
       topic: topicBase,
       asset: assetId,
       assetDescription: "Reverzirno valjarsko ogrodje",
@@ -834,7 +849,7 @@ export class MqttHrmTransport implements IHrmTransport {
       ? this.materialRelationshipEvidenceAttribute(batch, time, dataGroup)
       : undefined;
 
-    await this.mqttOutput.publishMqttMessage({
+    await this.publishMqttMessage({
       topic: topicBase,
       asset: assetId,
       assetDescription: "Skladišče in laboratorij kakovosti",
@@ -945,7 +960,7 @@ export class MqttHrmTransport implements IHrmTransport {
       );
     }
 
-    await this.mqttOutput.publishMqttMessage({
+    await this.publishMqttMessage({
       topic: topicBase,
       asset: assetId,
       assetDescription,
@@ -974,7 +989,7 @@ export class MqttHrmTransport implements IHrmTransport {
     pass: PassEvent,
     time: string): Promise<void> {
     const dataGroup = this.resolveDataGroup(assetId, { dataGroup: "asset" });
-    await this.mqttOutput.publishMqttMessage({
+    await this.publishMqttMessage({
       topic: topicBase,
       asset: assetId,
       assetDescription: "Reverzirno valjarsko ogrodje",
@@ -1012,7 +1027,7 @@ export class MqttHrmTransport implements IHrmTransport {
     alarm: AlarmEvent,
     time: string): Promise<void> {
     const dataGroup = this.resolveDataGroup(assetId, { dataGroup: "asset" });
-    await this.mqttOutput.publishMqttMessage({
+    await this.publishMqttMessage({
       topic: topicBase,
       asset: assetId,
       assetDescription,

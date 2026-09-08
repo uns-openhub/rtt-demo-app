@@ -1,4 +1,10 @@
-import { ConfigFile, UnsProxyProcess, logger } from "@uns-kit/core";
+import {
+  ConfigFile,
+  ServiceTokenProvider,
+  UnsClient,
+  UnsProxyProcess,
+  logger,
+} from "@uns-kit/core";
 import UnsMqttProxy from "@uns-kit/core/uns-mqtt/uns-mqtt-proxy.js";
 import { registerAttributeDescriptions, registerObjectTypeDescriptions } from "@uns-kit/core/uns/uns-dictionary-registry.js";
 import "@uns-kit/api";
@@ -10,6 +16,7 @@ import {
 import type { IApiProxyOptions } from "@uns-kit/core/uns/uns-interfaces.js";
 import { serviceApis } from "./api-routes.js";
 import { initHrm } from "./hrm/hrm-index.js";
+import { AssetIdentityPublicationProvider } from "./hrm/asset-identity-publication.js";
 
 async function main() {
   const config = await ConfigFile.loadConfig();
@@ -40,7 +47,16 @@ async function main() {
   const apiInput = await unsProxyProcess.createApiProxy("rttDemoApi", apiOptions);
 
   if (config.hrm) {
-    const line = await initHrm(config.hrm, mqttOutput, config.uns.processName!);
+    const identityProvider = new AssetIdentityPublicationProvider(
+      new UnsClient(config.uns.rest, {
+        graphqlUrl: config.uns.graphql,
+        tokenProvider: new ServiceTokenProvider({
+          ...(typeof config.uns.token === "string" ? { configToken: config.uns.token } : {}),
+        }),
+      }),
+      config.hrm.productionLine,
+    );
+    const line = await initHrm(config.hrm, mqttOutput, config.uns.processName!, identityProvider);
     await registerApiCatalog(apiInput, {
       serviceApis,
       context: {
