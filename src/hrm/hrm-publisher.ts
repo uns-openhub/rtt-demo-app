@@ -159,13 +159,35 @@ export class MqttHrmTransport implements IHrmTransport {
   ) {}
 
   private async publishMqttMessage(message: IMqttPublishRequest): Promise<void> {
+    const {
+      assetStableEntityId: _stableEntityId,
+      assetDisplayName: _displayName,
+      assetIdentityProof: _stableProof,
+      assetProviderIdentity: _providerIdentity,
+      assetProviderIdentityProof: _providerProof,
+      ...baseMessage
+    } = message;
     const identity = await this.identityProvider?.forAsset(
       message.asset,
       message.topic,
     );
+    if (!identity) {
+      await this.mqttOutput.publishMqttMessage(baseMessage);
+      return;
+    }
+    if ("assetProviderIdentity" in identity) {
+      await this.mqttOutput.publishMqttMessage({
+        ...baseMessage,
+        assetProviderIdentity: identity.assetProviderIdentity,
+        assetProviderIdentityProof: identity.assetProviderIdentityProof,
+      });
+      return;
+    }
     await this.mqttOutput.publishMqttMessage({
-      ...message,
-      ...(identity ?? {}),
+      ...baseMessage,
+      assetStableEntityId: identity.assetStableEntityId,
+      assetIdentityProof: identity.assetIdentityProof,
+      ...(identity.assetDisplayName ? { assetDisplayName: identity.assetDisplayName } : {}),
     });
   }
 

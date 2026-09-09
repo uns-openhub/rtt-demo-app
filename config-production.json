@@ -21,6 +21,12 @@
       "furnace": {
         "assetId": "hrm-pusher-furnace",
         "description": "Pusher reheating furnace",
+        "identity": {
+          "providerId": "demo.mes",
+          "externalSystem": "novasteel.mes",
+          "externalType": "equipment.code",
+          "externalId": "RESS-14"
+        },
         "zones": 4,
         "maxTempC": 1280,
         "gasConsumptionNm3PerHour": 800
