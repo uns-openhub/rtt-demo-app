@@ -1,5 +1,6 @@
 import type {
   AssetIdentityPublicationMetadata,
+  AssetProviderIdentityPublicationMetadata,
   ProviderAssetIdentity,
   UnsClient,
 } from "@uns-kit/core";
@@ -7,16 +8,22 @@ import type { AssetIdentityConfig, ProductionLineConfig } from "./hrm-types.js";
 
 const DEFAULT_REFRESH_SKEW_MS = 30_000;
 
-export type AssetIdentityMqttMetadata = Pick<
-  AssetIdentityPublicationMetadata,
-  "assetStableEntityId" | "assetIdentityProof"
-> & {
-  assetDisplayName?: string;
-};
+export function resolveAssetIdentityMqttInstanceName(
+  fallback: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): string {
+  return environment["RTT_INSTANCE_ID"]?.trim() || fallback;
+}
+
+export type AssetIdentityMqttMetadata =
+  | (Pick<AssetIdentityPublicationMetadata, "assetStableEntityId" | "assetIdentityProof"> & {
+      assetDisplayName?: string;
+    })
+  | Pick<AssetProviderIdentityPublicationMetadata, "assetProviderIdentity" | "assetProviderIdentityProof">;
 
 type AssetIdentityProofClient = Pick<
   UnsClient,
-  "issueAssetIdentityPublicationProofByExternalIdentity"
+  "issueAssetIdentityPublicationEvidenceByExternalIdentity"
 >;
 
 type CachedProof = {
@@ -82,7 +89,7 @@ export class AssetIdentityPublicationProvider {
     candidateAssetPath: string,
     assetDisplayName: string | undefined,
   ): Promise<CachedProof> {
-    const result = await this.client.issueAssetIdentityPublicationProofByExternalIdentity(
+    const result = await this.client.issueAssetIdentityPublicationEvidenceByExternalIdentity(
       identity,
       candidateAssetPath,
     );
@@ -92,6 +99,25 @@ export class AssetIdentityPublicationProvider {
     const expiresAtMs = Date.parse(result.expiresAt);
     if (!Number.isFinite(expiresAtMs) || expiresAtMs <= this.now()) {
       throw new Error("Controller returned an expired Asset identity proof.");
+    }
+    if ("assetProviderIdentity" in result) {
+      const expectedIdentity = {
+        providerId: identity.providerId.trim().toLowerCase(),
+        externalSystem: identity.externalSystem.trim().toLowerCase(),
+        externalType: identity.externalType.trim().toLowerCase(),
+        externalId: identity.externalId.trim(),
+      };
+      if (JSON.stringify(result.assetProviderIdentity) !== JSON.stringify(expectedIdentity)) {
+        throw new Error("Controller returned Asset identity evidence for a different provider identifier.");
+      }
+      return {
+        candidateAssetPath,
+        expiresAtMs,
+        metadata: {
+          assetProviderIdentity: result.assetProviderIdentity,
+          assetProviderIdentityProof: result.assetProviderIdentityProof,
+        },
+      };
     }
     return {
       candidateAssetPath,

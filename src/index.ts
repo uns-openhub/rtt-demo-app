@@ -16,7 +16,10 @@ import {
 import type { IApiProxyOptions } from "@uns-kit/core/uns/uns-interfaces.js";
 import { serviceApis } from "./api-routes.js";
 import { initHrm } from "./hrm/hrm-index.js";
-import { AssetIdentityPublicationProvider } from "./hrm/asset-identity-publication.js";
+import {
+  AssetIdentityPublicationProvider,
+  resolveAssetIdentityMqttInstanceName,
+} from "./hrm/asset-identity-publication.js";
 
 async function main() {
   const config = await ConfigFile.loadConfig();
@@ -29,7 +32,7 @@ async function main() {
 
   const mqttOutput = await unsProxyProcess.createUnsMqttProxy(
     config.output?.host ?? config.infra.host!,
-    "templateUnsRttOutput",
+    resolveAssetIdentityMqttInstanceName("templateUnsRttOutput"),
     config.uns.instanceMode!,
     config.uns.handover!,
     { publishThrottlingDelay: 0 }

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AssetIdentityPublicationProvider } from "../src/hrm/asset-identity-publication.js";
+import {
+  AssetIdentityPublicationProvider,
+  resolveAssetIdentityMqttInstanceName,
+} from "../src/hrm/asset-identity-publication.js";
 import { MqttHrmTransport } from "../src/hrm/hrm-publisher.js";
 import type { ProductionLineConfig } from "../src/hrm/hrm-types.js";
 
@@ -39,10 +42,17 @@ const productionLine = {
   },
 } satisfies ProductionLineConfig;
 
+test("binds identity-bearing MQTT evidence to the controller-managed RTT instance", () => {
+  assert.equal(resolveAssetIdentityMqttInstanceName("templateUnsRttOutput", {
+    RTT_INSTANCE_ID: " 9e65fa0d ",
+  }), "9e65fa0d");
+  assert.equal(resolveAssetIdentityMqttInstanceName("templateUnsRttOutput", {}), "templateUnsRttOutput");
+});
+
 test("resolves and caches publish-ready metadata for a configured Asset identity", async () => {
   let calls = 0;
   const client = {
-    async issueAssetIdentityPublicationProofByExternalIdentity(identity: unknown, candidateAssetPath: string) {
+    async issueAssetIdentityPublicationEvidenceByExternalIdentity(identity: unknown, candidateAssetPath: string) {
       calls += 1;
       assert.deepEqual(identity, productionLine.furnace.identity);
       assert.equal(candidateAssetPath, "forge-group/novasteel/hot-rolling/hrm-furnace");
@@ -81,7 +91,7 @@ test("resolves and caches publish-ready metadata for a configured Asset identity
 
 test("keeps unconfigured Assets backward compatible without a controller request", async () => {
   const client = {
-    async issueAssetIdentityPublicationProofByExternalIdentity() {
+    async issueAssetIdentityPublicationEvidenceByExternalIdentity() {
       throw new Error("must not be called");
     },
   };
@@ -95,7 +105,7 @@ test("keeps unconfigured Assets backward compatible without a controller request
 
 test("fails closed when the controller returns a proof for another path", async () => {
   const client = {
-    async issueAssetIdentityPublicationProofByExternalIdentity() {
+    async issueAssetIdentityPublicationEvidenceByExternalIdentity() {
       return {
         assetStableEntityId: "11111111-1111-4111-8111-111111111111",
         assetIdentityProof: "proof-1",
@@ -114,6 +124,58 @@ test("fails closed when the controller returns a proof for another path", async 
   await assert.rejects(
     provider.forAsset("hrm-furnace", "forge-group/novasteel/hot-rolling"),
     /different candidate path/,
+  );
+});
+
+test("publishes reviewed provider candidate evidence when the external ID is not mapped yet", async () => {
+  const client = {
+    async issueAssetIdentityPublicationEvidenceByExternalIdentity(identity: unknown, candidateAssetPath: string) {
+      assert.deepEqual(identity, productionLine.furnace.identity);
+      return {
+        assetProviderIdentity: productionLine.furnace.identity,
+        assetProviderIdentityProof: "provider-proof-1",
+        candidateAssetPath,
+        expiresAt: "2026-09-08T22:05:00.000Z",
+      };
+    },
+  };
+  const provider = new AssetIdentityPublicationProvider(
+    client,
+    productionLine,
+    30_000,
+    () => Date.parse("2026-09-08T22:00:00.000Z"),
+  );
+
+  assert.deepEqual(await provider.forAsset(
+    "hrm-furnace",
+    "forge-group/novasteel/hot-rolling",
+  ), {
+    assetProviderIdentity: productionLine.furnace.identity,
+    assetProviderIdentityProof: "provider-proof-1",
+  });
+});
+
+test("fails closed when provider candidate evidence names another external identifier", async () => {
+  const client = {
+    async issueAssetIdentityPublicationEvidenceByExternalIdentity(_identity: unknown, candidateAssetPath: string) {
+      return {
+        assetProviderIdentity: { ...productionLine.furnace.identity, externalId: "RESS-15" },
+        assetProviderIdentityProof: "provider-proof-1",
+        candidateAssetPath,
+        expiresAt: "2026-09-08T22:05:00.000Z",
+      };
+    },
+  };
+  const provider = new AssetIdentityPublicationProvider(
+    client,
+    productionLine,
+    30_000,
+    () => Date.parse("2026-09-08T22:00:00.000Z"),
+  );
+
+  await assert.rejects(
+    provider.forAsset("hrm-furnace", "forge-group/novasteel/hot-rolling"),
+    /different provider identifier/,
   );
 });
 
@@ -153,4 +215,38 @@ test("adds resolved identity metadata to the Asset publication", async () => {
   assert.equal(published[0]?.assetStableEntityId, "11111111-1111-4111-8111-111111111111");
   assert.equal(published[0]?.assetIdentityProof, "proof-1");
   assert.equal(published[0]?.assetDisplayName, "Furnace");
+});
+
+test("adds provider candidate evidence to the Asset publication without a stable ID", async () => {
+  const published: Array<Record<string, unknown>> = [];
+  const mqttOutput = {
+    async publishMqttMessage(message: Record<string, unknown>) {
+      published.push(message);
+    },
+  };
+  const identityProvider = {
+    async forAsset() {
+      return {
+        assetProviderIdentity: productionLine.furnace.identity,
+        assetProviderIdentityProof: "provider-proof-1",
+      };
+    },
+  };
+  const transport = new MqttHrmTransport(
+    mqttOutput as never,
+    2_000,
+    identityProvider as never,
+  );
+
+  await transport.publishAssetMaterialOccupancy(
+    "hrm-furnace",
+    "Furnace",
+    "forge-group/novasteel/hot-rolling/",
+    undefined,
+    "2026-09-08T22:00:00.000Z",
+  );
+
+  assert.deepEqual(published[0]?.assetProviderIdentity, productionLine.furnace.identity);
+  assert.equal(published[0]?.assetProviderIdentityProof, "provider-proof-1");
+  assert.equal(published[0]?.assetStableEntityId, undefined);
 });

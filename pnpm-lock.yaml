@@ -9,11 +9,11 @@ importers:
   .:
     dependencies:
       '@uns-kit/api':
-        specifier: ^3.0.18
-        version: 3.0.18(typescript@6.0.3)
+        specifier: ^3.0.19
+        version: 3.0.19(typescript@6.0.3)
       '@uns-kit/core':
-        specifier: ^3.0.18
-        version: 3.0.18(typescript@6.0.3)
+        specifier: ^3.0.19
+        version: 3.0.19(typescript@6.0.3)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -521,11 +521,11 @@ packages:
   '@types/ws@8.18.1':
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
 
-  '@uns-kit/api@3.0.18':
-    resolution: {integrity: sha512-PTXPIFRzgbhSy+twMsF1B/oimbChws6MXiFYbkpTv49DJnWZRQoTrwYrnxvRu9T3frF4p83w7DOb7SemdauHpg==}
+  '@uns-kit/api@3.0.19':
+    resolution: {integrity: sha512-cQ5ZWsrnlR3aVm12xQT6K0l8+Ksv4BtatOir80RS5x1YMPFrE2ejwqMUgpO0Qu2csGn3Net1aD9t9FAEYg5ZYA==}
 
-  '@uns-kit/core@3.0.18':
-    resolution: {integrity: sha512-1IT37TsKvtq9MkCaCL9QhCxBeE+HXQ0CYiNpFc4JitBDlKphOVneO/72vxsnlFjjk2ClxVFTUEGsv//lH9NrXQ==}
+  '@uns-kit/core@3.0.19':
+    resolution: {integrity: sha512-N9Ppufk3O6e9u66GTwBjV+NZ5bw8goYeTbXJvMA0ufJ8pFJGMgyST+jporerGhlRIvBkjb/8aHR2tQGFKPywQw==}
 
   abort-controller@3.0.0:
     resolution: {integrity: sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==}
@@ -1949,9 +1949,9 @@ snapshots:
     dependencies:
       '@types/node': 22.20.1
 
-  '@uns-kit/api@3.0.18(typescript@6.0.3)':
+  '@uns-kit/api@3.0.19(typescript@6.0.3)':
     dependencies:
-      '@uns-kit/core': 3.0.18(typescript@6.0.3)
+      '@uns-kit/core': 3.0.19(typescript@6.0.3)
       cookie-parser: 1.4.7
       express: 5.2.1
       hyparquet-writer: 0.16.6
@@ -1964,7 +1964,7 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  '@uns-kit/core@3.0.18(typescript@6.0.3)':
+  '@uns-kit/core@3.0.19(typescript@6.0.3)':
     dependencies:
       '@grpc/grpc-js': 1.14.4
       '@grpc/proto-loader': 0.8.1
