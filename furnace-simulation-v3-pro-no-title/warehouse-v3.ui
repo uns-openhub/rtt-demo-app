@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk+" version="3.20"/>
+  <object class="GtkBox" id="warehouse_root">
+    <property name="orientation">vertical</property><property name="spacing">14</property><property name="margin">20</property>
+    <child>
+      <object class="GtkBox"><property name="spacing">18</property>
+        <child><object class="GtkImage" id="logo_image"><property name="width-request">190</property><property name="height-request">55</property></object></child>
+        <child>
+          <object class="GtkBox"><property name="orientation">vertical</property><property name="spacing">3</property>
+            <child><object class="GtkLabel" id="warehouse_title"><property name="label">Warehouse</property><property name="xalign">0</property><attributes><attribute name="weight" value="bold"/><attribute name="scale" value="1.35"/></attributes></object></child>
+            <child><object class="GtkLabel" id="warehouse_desc"><property name="label">Material inventory and completed production records</property><property name="xalign">0</property></object></child>
+          </object><packing><property name="expand">True</property></packing>
+        </child>
+      </object><packing><property name="expand">False</property></packing>
+    </child>
+    <child>
+      <object class="GtkFrame" id="warehouse_controls_frame"><property name="label">MATERIAL SEARCH</property><property name="border-width">8</property>
+        <child><object class="GtkBox"><property name="spacing">10</property><property name="margin">8</property>
+          <child><object class="GtkEntry" id="warehouse_search"><property name="placeholder-text">Search material, batch, recipe or status</property></object><packing><property name="expand">True</property><property name="fill">True</property></packing></child>
+          <child><object class="GtkButton" id="warehouse_refresh"><property name="label">Refresh</property></object></child>
+          <child><object class="GtkButton" id="warehouse_use"><property name="label">Use in Furnace</property></object></child>
+        </object></child>
+      </object><packing><property name="expand">False</property></packing>
+    </child>
+    <child>
+      <object class="GtkFrame" id="warehouse_table_frame"><property name="label">INVENTORY</property><property name="border-width">8</property>
+        <child>
+          <object class="GtkScrolledWindow" id="warehouse_scroll">
+            <property name="vexpand">True</property><property name="hexpand">True</property>
+            <child>
+              <object class="GtkTreeView" id="warehouse_tree">
+                <property name="headers-visible">True</property><property name="enable-grid-lines">horizontal</property>
+                <child internal-child="selection"><object class="GtkTreeSelection"/></child>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object><packing><property name="expand">True</property><property name="fill">True</property></packing>
+    </child>
+    <child>
+      <object class="GtkLabel" id="warehouse_footer"><property name="label">Select a material and choose “Use in Furnace” to load it into the production order.</property><property name="xalign">0</property></object>
+      <packing><property name="expand">False</property></packing>
+    </child>
+  </object>
+</interface>

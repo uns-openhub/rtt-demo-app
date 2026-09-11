@@ -1,0 +1,46 @@
+version: "3.9"
+
+services:
+  uns-openhub-controller:
+    user: ${CONTROLLER_USER:-root}
+    image: ${UNS_REGISTRY:-docker.io}/${UNS_REPO_PREFIX:-unsopenhub}/${UNS_CONTROLLER_REPOSITORY:-uns-openhub-controller}:${UNS_TAG:-latest}
+    environment:
+      CONFIG_FILE: ${CONFIG_FILE:-config-example.json}
+      CONFIG_OVERRIDES_DIR: /usr/src/app/config-overrides
+      CONFIG_DIR: ${CONFIG_DIR:-./config}
+      CRYPTO_DIR: "/usr/src/app/crypto"
+      NODE_ENV: "production"
+    ports:
+      - "3200:3200"
+    volumes:
+      - ./configs/uns-openhub-controller:/usr/src/app/config-overrides:ro${BIND_MOUNT_LABEL:-}
+      - ./.secrets:/run/secrets:ro${BIND_MOUNT_LABEL:-}
+      - uns_crypto:/usr/src/app/crypto
+      - controller_code:/usr/src/app/controller-override
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -qO- http://127.0.0.1:3200/api/healthcheck >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    env_file:
+      - .env
+    networks:
+      - uns-openhub
+
+secrets:
+  infisical_token:
+    file: .secrets/infisical_token
+  infisical_project_id:
+    file: .secrets/infisical_project_id
+  infisical_site_url:
+    file: .secrets/infisical_site_url
+
+volumes:
+  uns_crypto: {}
+  controller_code: {}
+
+networks:
+  uns-openhub:
+    name: uns-openhub
