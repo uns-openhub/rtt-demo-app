@@ -420,6 +420,12 @@ class FurnaceSimulation(Gtk.Window):
     @staticmethod
     def compose_error(output):
         lines = [line.strip() for line in output.splitlines() if line.strip()]
+        if any("address already in use" in line.lower() for line in lines):
+            return (
+                "The OpenHub runtime could not start because a required host port "
+                "is already in use. Stop the conflicting service or change the "
+                "port mapping in docker-compose.yml."
+            )
         return "The OpenHub runtime could not start: " + (
             lines[-1] if lines else "no diagnostic output was returned"
         )
@@ -456,7 +462,7 @@ class FurnaceSimulation(Gtk.Window):
             self.ensure_rtt_running()
             self.wait_until_ready()
         except Exception as error:
-            self.report_error(str(error))
+            self.report_error(self.user_facing_error(error))
         finally:
             GLib.idle_add(lambda: self.start_button.set_sensitive(True) or False)
 
@@ -466,6 +472,11 @@ class FurnaceSimulation(Gtk.Window):
             for service in SERVICES:
                 status = self.service_status(service)
                 self.set_status(service, status, status in ("READY", "RUNNING"))
+                if status in ("STOPPED", "ERROR", "UNHEALTHY"):
+                    self.append_log(
+                        f"[WARNING] Required service {service} is {status}. "
+                        "Start the OpenHub runtime to enable Furnace and Warehouse APIs."
+                    )
                 all_ready = all_ready and status in ("READY", "RUNNING")
             openhub = self.openhub_api_ready()
             web = self.http_status("http://127.0.0.1:8180") == 200
@@ -641,7 +652,7 @@ class FurnaceSimulation(Gtk.Window):
             self.set_status("OpenHub authentication", "READY", True)
             self.append_log("[INFO] OpenHub authentication configured securely.")
         except Exception as error:
-            self.report_error(str(error))
+            self.report_error(self.user_facing_error(error))
 
     def request_token_from_user(self):
         result = {"token": None, "cancelled": False}
@@ -690,7 +701,12 @@ class FurnaceSimulation(Gtk.Window):
         try:
             self.graphql("query ValidateOpenHubAccess { GetRttNodes { rttNode } }")
             self.set_status("OpenHub authentication", "READY", True)
-        except RuntimeError:
+        except RuntimeError as error:
+            if self.is_connection_error(error):
+                raise RuntimeError(
+                    "OpenHub is not reachable at 127.0.0.1:3200. "
+                    "Start the OpenHub runtime, then log in before using Furnace or Warehouse."
+                ) from error
             if self.refresh_authentication():
                 self.graphql("query ValidateOpenHubAccess { GetRttNodes { rttNode } }")
                 self.set_status("OpenHub authentication", "READY", True)
@@ -776,7 +792,7 @@ class FurnaceSimulation(Gtk.Window):
             else:
                 self.report_error(f"OpenHub login failed: HTTP {error.code}")
         except Exception as error:
-            self.report_error(str(error))
+            self.report_error(self.user_facing_error(error))
 
     def rtt_node_state(self):
         query = """
@@ -969,6 +985,24 @@ class FurnaceSimulation(Gtk.Window):
         except (OSError, urllib.error.URLError):
             return None
 
+    @staticmethod
+    def is_connection_error(error):
+        text = str(error).lower()
+        return any(value in text for value in (
+            "connection refused", "connection reset", "timed out",
+            "urlopen error", "failed to establish a new connection",
+        ))
+
+    @classmethod
+    def user_facing_error(cls, error):
+        if cls.is_connection_error(error):
+            return (
+                "OpenHub connection failed. Make sure the OpenHub runtime and "
+                "Furnace API are running, then log in before using protected features. "
+                f"Details: {error}"
+            )
+        return str(error)
+
     @classmethod
     def http_ready(cls, url):
         return cls.http_status(url) == 200
@@ -1114,7 +1148,7 @@ class FurnaceSimulation(Gtk.Window):
             self.set_status("rtt-demo-app", rtt_status, rtt_status == "RUNNING")
         except RuntimeError as error:
             self.set_status("rtt-demo-app", "AUTH REQUIRED", False)
-            self.append_log("[INFO] rtt-demo-app status unavailable: " + str(error))
+            self.append_log("[INFO] rtt-demo-app status unavailable: " + self.user_facing_error(error))
         openhub = self.openhub_api_ready()
         self.set_status("OpenHub", "READY" if openhub else "STOPPED", openhub)
         controller_health = self.service_status("uns-openhub-controller")
@@ -1331,7 +1365,7 @@ class FurnaceSimulation(Gtk.Window):
             payload = self.hrm_request("GET", "/status")
             GLib.idle_add(self.update_warehouse_status, payload)
         except Exception as error:
-            self.append_log("[FAIL] Warehouse status: " + str(error))
+            self.append_log("[FAIL] Warehouse status: " + self.user_facing_error(error))
 
     def update_warehouse_status(self, payload):
         if self.warehouse_store is None:
@@ -1379,7 +1413,11 @@ class FurnaceSimulation(Gtk.Window):
                     ) from error
                 raise RuntimeError(f"Furnace API request failed: HTTP {error.code}") from error
             except (OSError, ValueError, urllib.error.URLError) as error:
-                raise RuntimeError(f"Furnace API request failed: {error}") from error
+                raise RuntimeError(
+                    "Furnace API connection failed at 127.0.0.1:3200. "
+                    "Start OpenHub and log in before using Furnace or Warehouse. "
+                    f"Details: {error}"
+                ) from error
 
     def refresh_furnace_status(self):
         threading.Thread(target=self.furnace_status_worker, daemon=True).start()
@@ -1389,7 +1427,7 @@ class FurnaceSimulation(Gtk.Window):
             payload = self.hrm_request("GET", "/status")
             GLib.idle_add(self.update_furnace_status, payload)
         except Exception as error:
-            self.append_log("[FAIL] Furnace status: " + str(error))
+            self.append_log("[FAIL] Furnace status: " + self.user_facing_error(error))
 
     def update_furnace_status(self, payload):
         stations = payload.get("stations") or {}
