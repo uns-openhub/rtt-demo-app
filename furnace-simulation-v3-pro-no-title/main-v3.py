@@ -40,6 +40,8 @@ class FurnaceSimulation(Gtk.Window):
         self.rtt_started_by_app = False
         self.rtt_instance_id = None
         self.rtt_version = RTT_VERSION
+        self.rtt_api_ready = False
+        self.available_recipe_ids = []
         self.furnace_window = None
         self.furnace_refresh_source = None
         self.warehouse_window = None
@@ -72,6 +74,7 @@ class FurnaceSimulation(Gtk.Window):
         )
         self.build_ui()
         self.refresh_status()
+        GLib.idle_add(self.start_runtime)
 
     @staticmethod
     def command_ok(command):
@@ -457,18 +460,17 @@ class FurnaceSimulation(Gtk.Window):
                 if result.returncode:
                     raise RuntimeError(self.compose_error(result.stdout))
                 self.runtime_started_by_app = True
-            self.wait_until_ready()
+            self.wait_until_ready(mark_ready=False)
             self.ensure_authentication()
-            self.ensure_rtt_running()
+            self.ensure_furnace_api_ready()
             self.wait_until_ready()
         except Exception as error:
             self.report_error(self.user_facing_error(error))
         finally:
             GLib.idle_add(lambda: self.start_button.set_sensitive(True) or False)
 
-    def wait_until_ready(self):
+    def wait_until_ready(self, mark_ready=True):
         for _ in range(45):
-            all_ready = True
             for service in SERVICES:
                 status = self.service_status(service)
                 self.set_status(service, status, status in ("READY", "RUNNING"))
@@ -477,16 +479,20 @@ class FurnaceSimulation(Gtk.Window):
                         f"[WARNING] Required service {service} is {status}. "
                         "Start the OpenHub runtime to enable Furnace and Warehouse APIs."
                     )
-                all_ready = all_ready and status in ("READY", "RUNNING")
             openhub = self.openhub_api_ready()
             web = self.http_status("http://127.0.0.1:8180") == 200
             controller_health = self.service_status("uns-openhub-controller")
+            if openhub and controller_health in ("STOPPED", "ERROR"):
+                controller_health = "READY"
             self.set_status("OpenHub", "READY" if openhub else "WAITING", openhub)
             self.set_status("Controller health", controller_health,
                             controller_health in ("READY", "RUNNING"))
             self.set_status("Web interface", "READY" if web else "WAITING", web)
-            if all_ready and openhub and web:
-                GLib.idle_add(self.mark_ready)
+            # The controller health endpoint confirms its PostgreSQL, MQTT, and Caddy
+            # dependencies, including when this client cannot inspect rootless containers.
+            if openhub and web:
+                if mark_ready:
+                    GLib.idle_add(self.mark_ready)
                 return
             threading.Event().wait(2)
         raise RuntimeError("OpenHub API or the web interface did not become ready.")
@@ -880,7 +886,6 @@ class FurnaceSimulation(Gtk.Window):
             matching = [
                 process for process in processes
                 if self.rtt_version_matches(process.get("version"))
-                and process.get("name") in (None, RTT_NODE)
             ]
             for process in matching:
                 instance_id = process.get("instanceId")
@@ -903,8 +908,6 @@ class FurnaceSimulation(Gtk.Window):
                             return "RUNNING"
                     if instance.get("desiredRunning") is True:
                         return "STARTING"
-            if str(node.get("status") or "").upper() in ("ONLINE", "RUNNING", "ACTIVE"):
-                return "RUNNING"
             return "STOPPED"
         raise RuntimeError(f"Installed RTT node '{RTT_NODE}' was not found.")
 
@@ -949,10 +952,30 @@ class FurnaceSimulation(Gtk.Window):
             status = self.rtt_node_state()
             self.set_status("rtt-demo-app", status if status == "RUNNING" else "STARTING...", status == "RUNNING")
             if status == "RUNNING":
-                self.append_log("[INFO] rtt-demo-app is RUNNING.")
                 return
             threading.Event().wait(2)
         raise RuntimeError("rtt-demo-app v6.1.12 did not become RUNNING.")
+
+    def ensure_furnace_api_ready(self):
+        if self.rtt_api_ready:
+            return
+        self.ensure_rtt_running()
+        for _ in range(30):
+            try:
+                self._hrm_request("GET", "/status")
+            except RuntimeError as error:
+                if "authentication" in str(error).lower():
+                    raise
+                self.set_status("rtt-demo-app", "STARTING...", False)
+                threading.Event().wait(2)
+                continue
+            self.rtt_api_ready = True
+            self.set_status("rtt-demo-app", "RUNNING", True)
+            self.append_log("[INFO] rtt-demo-app v6.1.12 is RUNNING and its Furnace API is ready.")
+            return
+        raise RuntimeError(
+            "rtt-demo-app v6.1.12 started but its Furnace API did not become reachable through OpenHub."
+        )
 
     def service_status(self, service):
         try:
@@ -1145,8 +1168,19 @@ class FurnaceSimulation(Gtk.Window):
             self.set_status("OpenHub authentication", "REQUIRED", False)
         try:
             rtt_status = self.rtt_node_state()
-            self.set_status("rtt-demo-app", rtt_status, rtt_status == "RUNNING")
+            if rtt_status == "RUNNING":
+                try:
+                    self._hrm_request("GET", "/status")
+                    self.rtt_api_ready = True
+                    self.set_status("rtt-demo-app", "RUNNING", True)
+                except RuntimeError:
+                    self.rtt_api_ready = False
+                    self.set_status("rtt-demo-app", "STARTING...", False)
+            else:
+                self.rtt_api_ready = False
+                self.set_status("rtt-demo-app", rtt_status, False)
         except RuntimeError as error:
+            self.rtt_api_ready = False
             self.set_status("rtt-demo-app", "AUTH REQUIRED", False)
             self.append_log("[INFO] rtt-demo-app status unavailable: " + self.user_facing_error(error))
         openhub = self.openhub_api_ready()
@@ -1240,6 +1274,7 @@ class FurnaceSimulation(Gtk.Window):
             }
         builder.get_object("submit_production").connect("clicked", self.submit_production)
         builder.get_object("refresh_furnace").connect("clicked", lambda *_: self.refresh_furnace_status())
+        self.refresh_available_recipes()
         self.load_furnace_images()
         self.update_furnace_visual(False)
         return window
@@ -1392,7 +1427,7 @@ class FurnaceSimulation(Gtk.Window):
             ])
         return False
 
-    def hrm_request(self, method, path, body=None):
+    def _hrm_request(self, method, path, body=None):
         for attempt in range(2):
             token = self.openhub_token()
             url = HRM_API_BASE + path
@@ -1418,6 +1453,56 @@ class FurnaceSimulation(Gtk.Window):
                     "Start OpenHub and log in before using Furnace or Warehouse. "
                     f"Details: {error}"
                 ) from error
+
+    def hrm_request(self, method, path, body=None):
+        self.ensure_furnace_api_ready()
+        try:
+            return self._hrm_request(method, path, body)
+        except RuntimeError as error:
+            if "HTTP 502" not in str(error):
+                raise
+            self.rtt_api_ready = False
+            self.append_log(
+                "[WARNING] Furnace API is restarting or its OpenHub route is updating; waiting for it."
+            )
+            self.ensure_furnace_api_ready()
+            return self._hrm_request(method, path, body)
+
+    def fetch_available_recipes(self):
+        payload = self.hrm_request("GET", "/recipe-map")
+        recipes = payload.get("recipes")
+        if not isinstance(recipes, list):
+            raise RuntimeError("Furnace API returned an invalid recipe map.")
+        recipe_ids = [
+            recipe.get("id") for recipe in recipes
+            if isinstance(recipe, dict) and isinstance(recipe.get("id"), str)
+            and recipe["id"].strip()
+        ]
+        if not recipe_ids:
+            raise RuntimeError("Furnace API has no available recipes.")
+        return recipe_ids
+
+    def refresh_available_recipes(self):
+        threading.Thread(target=self.available_recipes_worker, daemon=True).start()
+
+    def available_recipes_worker(self):
+        try:
+            recipe_ids = self.fetch_available_recipes()
+            GLib.idle_add(self.update_available_recipes, recipe_ids)
+        except Exception as error:
+            self.append_log("[FAIL] Furnace recipes: " + self.user_facing_error(error))
+
+    def update_available_recipes(self, recipe_ids):
+        self.available_recipe_ids = recipe_ids
+        if self.recipe_entry is not None:
+            self.recipe_entry.set_placeholder_text(recipe_ids[0])
+            if not self.recipe_entry.get_text().strip():
+                self.recipe_entry.set_text(recipe_ids[0])
+        if self.production_status_label is not None:
+            self.production_status_label.set_text(
+                "Available recipes: " + ", ".join(recipe_ids)
+            )
+        return False
 
     def refresh_furnace_status(self):
         threading.Thread(target=self.furnace_status_worker, daemon=True).start()
@@ -1529,6 +1614,13 @@ class FurnaceSimulation(Gtk.Window):
 
     def submit_production_worker(self, body):
         try:
+            recipe_ids = self.fetch_available_recipes()
+            if body["recipeId"] not in recipe_ids:
+                GLib.idle_add(
+                    self.production_status_label.set_text,
+                    "Recipe unavailable. Available recipes: " + ", ".join(recipe_ids),
+                )
+                return
             result = self.hrm_request("POST", "/batch", body)
             GLib.idle_add(
                 self.production_status_label.set_text,
