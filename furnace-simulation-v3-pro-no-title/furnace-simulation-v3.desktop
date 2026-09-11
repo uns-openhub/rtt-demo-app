@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Furnace Simulation
+Comment=OpenHub Furnace and HRM control
+Exec=/opt/furnace-simulation/furnace-simulation-v3
+Path=/opt/furnace-simulation
+Icon=/opt/furnace-simulation/furnace-simulation.svg
+Terminal=false
+Categories=Utility;
+StartupNotify=true

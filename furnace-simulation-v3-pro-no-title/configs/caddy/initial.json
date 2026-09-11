@@ -1,0 +1,15 @@
+{
+  "admin": {
+    "listen": ":2019"
+  },
+  "apps": {
+    "http": {
+      "servers": {
+        "default": {
+          "listen": [":8180"],
+          "routes": []
+        }
+      }
+    }
+  }
+}

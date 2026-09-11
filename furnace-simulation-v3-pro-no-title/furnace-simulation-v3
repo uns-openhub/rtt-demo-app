@@ -1,0 +1,24 @@
+#!/bin/sh
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+# VS Code Snap can export GTK paths for its own runtime. Use the system GTK
+# modules so a desktop launch does not inherit incompatible Snap libraries.
+if [ -d /usr/lib/x86_64-linux-gnu/gtk-3.0 ]; then
+    export GTK_PATH=/usr/lib/x86_64-linux-gnu/gtk-3.0
+    export GTK_EXE_PREFIX=/usr
+    export GTK_MODULES=
+fi
+if ! command -v python3 >/dev/null 2>&1; then
+    if command -v zenity >/dev/null 2>&1; then
+        zenity --error --title="Furnace Simulation" \
+            --text="Python 3 is required to start Furnace Simulation." 2>/dev/null
+    fi
+    exit 1
+fi
+if ! python3 -c 'import gi; gi.require_version("Gtk", "3.0")' >/dev/null 2>&1; then
+    if command -v zenity >/dev/null 2>&1; then
+        zenity --error --title="Furnace Simulation" \
+            --text="GTK3 Python bindings are missing. Install python3-gi and gir1.2-gtk-3.0." 2>/dev/null
+    fi
+    exit 1
+fi
+exec python3 "$SCRIPT_DIR/main-v3.py" "$@"

@@ -1,0 +1,5 @@
+
+# Local GUI/runtime files
+.env
+.secrets/
+__pycache__/

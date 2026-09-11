@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk+" version="3.20"/>
+  <object class="GtkBox" id="main_root">
+    <property name="orientation">vertical</property>
+    <property name="spacing">16</property>
+    <property name="margin">20</property>
+    <child>
+      <object class="GtkBox" id="header"><property name="spacing">16</property>
+        <child><object class="GtkImage" id="logo_image"><property name="width-request">190</property><property name="height-request">55</property></object><packing><property name="expand">False</property></packing></child>
+        <child><object class="GtkBox" id="header_text"><property name="orientation">vertical</property><property name="spacing">3</property>
+          <child><object class="GtkLabel" id="main_title"><property name="label"></property><property name="xalign">0</property></object></child>
+          <child><object class="GtkLabel" id="subtitle"><property name="label"></property><property name="xalign">0</property></object></child>
+        </object><packing><property name="expand">True</property><property name="fill">True</property></packing></child>
+        <child><object class="GtkFrame" id="clock_frame"><property name="shadow-type">in</property><child><object class="GtkLabel" id="clock_label"><property name="label">--</property><property name="margin-start">14</property><property name="margin-end">14</property><property name="margin-top">8</property><property name="margin-bottom">8</property><property name="xalign">0.5</property></object></child></object><packing><property name="expand">False</property></packing></child>
+      </object>
+      <packing><property name="expand">False</property></packing>
+    </child>
+    <child>
+      <object class="GtkFrame" id="runtime_frame"><property name="label">RUNTIME STATUS</property><property name="shadow-type">in</property>
+        <child><object class="GtkBox" id="runtime_content"><property name="orientation">vertical</property><property name="spacing">14</property><property name="margin">14</property>
+          <child><object class="GtkGrid" id="status_grid"><property name="column-spacing">28</property><property name="row-spacing">8</property>
+        <child>
+          <object class="GtkLabel" id="name_Podman"><property name="label">Podman</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">0</property><property name="top-attach">0</property></packing>
+        </child>
+        <child>
+          <object class="GtkLabel" id="status_Podman"><property name="label">CHECKING</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">1</property><property name="top-attach">0</property></packing>
+        </child>        <child>
+          <object class="GtkLabel" id="name_Configuration"><property name="label">Configuration</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">0</property><property name="top-attach">1</property></packing>
+        </child>
+        <child>
+          <object class="GtkLabel" id="status_Configuration"><property name="label">CHECKING</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">1</property><property name="top-attach">1</property></packing>
+        </child>        <child>
+          <object class="GtkLabel" id="name_OpenHub_authentication"><property name="label">OpenHub authentication</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">0</property><property name="top-attach">2</property></packing>
+        </child>
+        <child>
+          <object class="GtkLabel" id="status_OpenHub_authentication"><property name="label">CHECKING</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">1</property><property name="top-attach">2</property></packing>
+        </child>        <child>
+          <object class="GtkLabel" id="name_postgres"><property name="label">postgres</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">0</property><property name="top-attach">3</property></packing>
+        </child>
+        <child>
+          <object class="GtkLabel" id="status_postgres"><property name="label">CHECKING</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">1</property><property name="top-attach">3</property></packing>
+        </child>        <child>
+          <object class="GtkLabel" id="name_mosquitto"><property name="label">mosquitto</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">0</property><property name="top-attach">4</property></packing>
+        </child>
+        <child>
+          <object class="GtkLabel" id="status_mosquitto"><property name="label">CHECKING</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">1</property><property name="top-attach">4</property></packing>
+        </child>        <child>
+          <object class="GtkLabel" id="name_caddy"><property name="label">caddy</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">0</property><property name="top-attach">5</property></packing>
+        </child>
+        <child>
+          <object class="GtkLabel" id="status_caddy"><property name="label">CHECKING</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">1</property><property name="top-attach">5</property></packing>
+        </child>        <child>
+          <object class="GtkLabel" id="name_questdb"><property name="label">questdb</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">2</property><property name="top-attach">0</property></packing>
+        </child>
+        <child>
+          <object class="GtkLabel" id="status_questdb"><property name="label">CHECKING</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">3</property><property name="top-attach">0</property></packing>
+        </child>        <child>
+          <object class="GtkLabel" id="name_uns_openhub_controller"><property name="label">uns-openhub-controller</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">2</property><property name="top-attach">1</property></packing>
+        </child>
+        <child>
+          <object class="GtkLabel" id="status_uns_openhub_controller"><property name="label">CHECKING</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">3</property><property name="top-attach">1</property></packing>
+        </child>        <child>
+          <object class="GtkLabel" id="name_rtt_demo_app"><property name="label">rtt-demo-app</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">2</property><property name="top-attach">2</property></packing>
+        </child>
+        <child>
+          <object class="GtkLabel" id="status_rtt_demo_app"><property name="label">CHECKING</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">3</property><property name="top-attach">2</property></packing>
+        </child>        <child>
+          <object class="GtkLabel" id="name_OpenHub"><property name="label">OpenHub</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">2</property><property name="top-attach">3</property></packing>
+        </child>
+        <child>
+          <object class="GtkLabel" id="status_OpenHub"><property name="label">CHECKING</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">3</property><property name="top-attach">3</property></packing>
+        </child>        <child>
+          <object class="GtkLabel" id="name_Controller_health"><property name="label">Controller health</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">2</property><property name="top-attach">4</property></packing>
+        </child>
+        <child>
+          <object class="GtkLabel" id="status_Controller_health"><property name="label">CHECKING</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">3</property><property name="top-attach">4</property></packing>
+        </child>        <child>
+          <object class="GtkLabel" id="name_Web_interface"><property name="label">Web interface</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">2</property><property name="top-attach">5</property></packing>
+        </child>
+        <child>
+          <object class="GtkLabel" id="status_Web_interface"><property name="label">CHECKING</property><property name="xalign">0</property></object>
+          <packing><property name="left-attach">3</property><property name="top-attach">5</property></packing>
+        </child>
+          </object></child>
+          <child><object class="GtkBox" id="ready_bar"><property name="spacing">10</property>
+            <child><object class="GtkLabel" id="ready_dot"><property name="label">●</property></object></child>
+            <child><object class="GtkLabel" id="ready_label"><property name="label">Ready to start.</property><property name="xalign">0</property></object><packing><property name="expand">True</property></packing></child>
+          </object></child>
+        </object></child>
+      </object><packing><property name="expand">False</property></packing>
+    </child>
+    <child>
+      <object class="GtkBox" id="controls"><property name="spacing">10</property>
+        <child><object class="GtkButton" id="start_button"><property name="label">▶  START RUNTIME</property><property name="height-request">42</property></object><packing><property name="expand">True</property></packing></child>
+        <child><object class="GtkButton" id="stop_button"><property name="label">■  STOP RUNTIME</property><property name="height-request">42</property></object><packing><property name="expand">True</property></packing></child>
+        <child><object class="GtkButton" id="open_button"><property name="label">FURNACE</property><property name="height-request">42</property></object><packing><property name="expand">True</property></packing></child>
+        <child><object class="GtkButton" id="warehouse_button"><property name="label">▣  WAREHOUSE</property><property name="height-request">42</property></object><packing><property name="expand">True</property></packing></child>
+        <child><object class="GtkButton" id="uns_button"><property name="label">◈  OPEN UNS</property><property name="height-request">42</property></object><packing><property name="expand">True</property></packing></child>
+        <child><object class="GtkButton" id="auth_button"><property name="label">OPENHUB LOGIN</property><property name="height-request">42</property></object><packing><property name="expand">True</property></packing></child>
+      </object><packing><property name="expand">False</property></packing>
+    </child>
+    <child>
+      <object class="GtkBox" id="lower_area"><property name="orientation">vertical</property><property name="spacing">12</property>
+        <child><object class="GtkFrame" id="timeline_frame"><property name="label">STARTUP TIMELINE</property><property name="shadow-type">in</property>
+          <child><object class="GtkBox" id="timeline_content"><property name="orientation">vertical</property><property name="spacing">8</property><property name="margin">10</property>
+            <child><object class="GtkScrolledWindow" id="timeline_scroll"><property name="height-request">125</property><property name="hscrollbar-policy">automatic</property><property name="vscrollbar-policy">automatic</property><child><object class="GtkTextView" id="timeline_view"><property name="editable">False</property><property name="cursor-visible">False</property><property name="monospace">True</property></object></child></object></child>
+            <child><object class="GtkLabel" id="session_label"><property name="label">Started: --&#10;Stopped: --&#10;Runtime duration: --</property><property name="xalign">0</property></object></child>
+          </object></child>
+        </object></child>
+        <child><object class="GtkFrame" id="diagnostics_frame"><property name="label">DIAGNOSTICS</property><property name="shadow-type">in</property>
+          <child><object class="GtkScrolledWindow" id="log_scroll"><property name="height-request">150</property><child><object class="GtkTextView" id="log_view"><property name="editable">False</property><property name="cursor-visible">False</property><property name="monospace">True</property></object></child></object></child>
+        </object><packing><property name="expand">True</property><property name="fill">True</property></packing></child>
+      </object><packing><property name="expand">True</property><property name="fill">True</property></packing></child>
+  </object>
+</interface>

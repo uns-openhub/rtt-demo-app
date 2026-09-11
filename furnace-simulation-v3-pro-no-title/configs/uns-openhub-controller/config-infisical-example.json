@@ -1,0 +1,161 @@
+{
+  "uns": {
+    "graphql": "http://[CONTROLLER_HOST]:3200/graphql",
+    "rest": "http://[CONTROLLER_HOST]:3200/api",
+    "env": "prod",
+    "processName": "[PROCESS_NAME]"
+  },
+
+  "infra": {
+    "host": "[UNS_MQTT_HOST]"
+  },
+
+  "pg": {
+    "user": "[POSTGRES_USER]",
+    "host": "[POSTGRES_HOST]",
+    "port": 5432,
+    "database": "[POSTGRES_DB]",
+    "isPoolConnection": true,
+    "searchTextConfig": "public.uns_slovenian",
+    "password": {
+      "environment": "prod",
+      "key": "PG_PASS",
+      "provider": "infisical",
+      "path": "/db/pg"
+    },
+    "ssl": {
+      "rejectUnauthorized": false
+    }
+  },
+
+  "server": {
+    "apiEndpoint": "/api",
+    "docsEndpoint": "/docs",
+    "graphqlEndpoint": "/graphql",
+    "ip": "[CONTROLLER_HOST]",
+    "port": 3200,
+    "cluster": true,
+    "infisicalSecretCacheEnabled": true,
+    "infisicalTokenReloadSeconds": 86400,
+    "clusterTimings": {
+      "masterHeartbeatMs": 1000,
+      "masterStaleThresholdMs": 25000,
+      "electionTimeoutMs": 6000,
+      "initialHeartbeatWaitMs": 3000,
+      "electionScoreIntervalMs": 7000
+    },
+    "keys": {
+      "default": {
+        "kid": "[KEY_ID]",
+        "privateKey": {"environment": "prod", "key": "PRIVATE_KEY", "provider": "infisical", "path": "/keys"}
+      }
+    }
+  },
+
+  "frontend": {
+    "url": "http://[CONTROLLER_HOST]:3200/"
+  },
+
+  "unsApiGlobal": {
+    "baseUrl": "https://[PUBLIC_UNS_DOMAIN]",
+    "apiBasePath": "/api/catchall",
+    "bearerToken": "[UNS_API_BEARER_TOKEN]",
+    "swaggerPath": "/uns-api-global/general-api/catchall-swagger.json"
+  },
+
+  "questdb": {
+    "configurationString": "http::addr=questdb:9000;auto_flush=on"
+  },
+
+  "addons": {
+    "repositorySources": [
+      {
+        "id": "uns-openhub-public",
+        "provider": "github",
+        "owner": "uns-openhub",
+        "versions": {
+          "mode": "releases",
+          "includePrereleases": false
+        }
+      }
+    ]
+  },
+
+  "caddy": {
+    "adminUrl": "http://[CADDY_ADMIN_HOST]:2019/",
+    "proxyHost": "https://[PUBLIC_UNS_DOMAIN]",
+    "serverName": "default",
+    "listen": [
+      ":443"
+    ],
+    "adminListen": ":2019",
+    "allowedOrigins": [
+      "https://[PUBLIC_UNS_DOMAIN]",
+      "http://[PUBLIC_UNS_DOMAIN]",
+      "http://localhost:8080",
+      "http://localhost:3200",
+      "http://localhost:4200"
+    ],
+    "baseConfig": {
+      "apps": {
+        "tls": {
+          "certificates": {
+            "load_files": [
+              {
+                "certificate": "[PATH_TO_PUBLIC_CERT]",
+                "key": "[PATH_TO_PRIVATE_KEY]",
+                "tags": [
+                  "unsopenhub-cert"
+                ]
+              }
+            ]
+          }
+        },
+        "http": {
+          "servers": {
+            "default": {
+              "routes": [],
+              "tls_connection_policies": [
+                {
+                  "certificate_selection": {
+                    "any_tag": [
+                      "unsopenhub-cert"
+                    ]
+                  }
+                }
+              ]
+            },
+            "http_redirect": {
+              "listen": [
+                ":80"
+              ],
+              "routes": [
+                {
+                  "match": [
+                    {
+                      "host": [
+                        "[PUBLIC_UNS_DOMAIN]"
+                      ]
+                    }
+                  ],
+                  "handle": [
+                    {
+                      "handler": "static_response",
+                      "status_code": 308,
+                      "headers": {
+                        "Location": [
+                          "https://[PUBLIC_UNS_DOMAIN]{http.request.uri}"
+                        ]
+                      }
+                    }
+                  ],
+                  "terminal": true
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

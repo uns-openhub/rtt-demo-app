@@ -1,0 +1,121 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: ${UNS_REGISTRY:-docker.io}/${UNS_REPO_PREFIX:-unsopenhub}/${UNS_POSTGRES_REPOSITORY:-uns-postgres}:${UNS_TAG:-latest}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-uns}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-uns}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./configs/postgres:/docker-entrypoint-initdb.d:ro${BIND_MOUNT_LABEL:-}
+    healthcheck:
+      test: ["CMD", "sh", "-c", "PGPASSWORD=$${POSTGRES_PASSWORD} pg_isready -h 127.0.0.1 -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - uns-openhub
+
+  mosquitto:
+    security_opt:
+      - apparmor=unconfined
+    user: "0:0"
+    image: docker.io/eclipse-mosquitto:latest
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./configs/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro${BIND_MOUNT_LABEL:-}
+    healthcheck:
+      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-p", "1883", "-t", "healthcheck", "-n"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - uns-openhub
+
+  caddy:
+    image: docker.io/library/caddy:latest
+    restart: unless-stopped
+    ports:
+      - "8180:8180"
+      - "2019:2019"
+    volumes:
+      - ./configs/caddy/initial.json:/etc/caddy/caddy.json:ro${BIND_MOUNT_LABEL:-}
+    command: ["caddy", "run", "--config", "/etc/caddy/caddy.json"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+    networks:
+      - uns-openhub
+
+  questdb:
+    image: docker.io/questdb/questdb:latest
+    ports:
+      - "9000:9000"
+      - "8812:8812"
+      - "9009:9009"
+    volumes:
+      - questdb_data:/var/lib/questdb
+    restart: unless-stopped
+    networks:
+      - uns-openhub
+
+  uns-openhub-controller:
+    user: ${CONTROLLER_USER:-root}
+    image: ${UNS_REGISTRY:-docker.io}/${UNS_REPO_PREFIX:-unsopenhub}/${UNS_CONTROLLER_REPOSITORY:-uns-openhub-controller}:${UNS_TAG:-latest}
+    environment:
+      CONFIG_FILE: ${CONFIG_FILE:-config-example.json}
+      CONFIG_OVERRIDES_DIR: /usr/src/app/config-overrides
+      CONFIG_DIR: ${CONFIG_DIR:-./config}
+      CRYPTO_DIR: "/usr/src/app/crypto"
+      NODE_ENV: "production"
+    ports:
+      - "3200:3200"
+    volumes:
+      - ./configs/uns-openhub-controller:/usr/src/app/config-overrides:ro${BIND_MOUNT_LABEL:-}
+      - ./.secrets:/run/secrets:ro${BIND_MOUNT_LABEL:-}
+      - uns_crypto:/usr/src/app/crypto
+      - controller_code:/usr/src/app/controller-override
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -qO- http://127.0.0.1:3200/api/healthcheck >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+    networks:
+      - uns-openhub
+
+secrets:
+  infisical_token:
+    file: .secrets/infisical_token
+  infisical_project_id:
+    file: .secrets/infisical_project_id
+  infisical_site_url:
+    file: .secrets/infisical_site_url
+
+volumes:
+  pgdata: {}
+  questdb_data: {}
+  uns_crypto: {}
+  controller_code: {}
+
+networks:
+  uns-openhub:
+    name: uns-openhub
