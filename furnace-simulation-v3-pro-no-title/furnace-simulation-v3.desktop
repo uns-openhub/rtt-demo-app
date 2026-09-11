@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=OpenHub Furnace Simulation
+Name=Furnace Simulation
 Comment=OpenHub Furnace and HRM control
-Exec="/home/renne-marcelino-struna/Downloads/furnace-simulation-v3-fixed-v2 (3)/furnace-simulation-v3-pro-no-title/furnace-simulation-v3"
-Path=/home/renne-marcelino-struna/Downloads/furnace-simulation-v3-fixed-v2 (3)/furnace-simulation-v3-pro-no-title
-Icon=/home/renne-marcelino-struna/Downloads/furnace-simulation-v3-fixed-v2 (3)/furnace-simulation-v3-pro-no-title/furnace-simulation.svg
+Exec=/opt/furnace-simulation/furnace-simulation-v3
+Path=/opt/furnace-simulation
+Icon=/opt/furnace-simulation/furnace-simulation.svg
 Terminal=false
 Categories=Utility;
 StartupNotify=true
