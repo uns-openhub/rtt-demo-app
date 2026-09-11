@@ -118,7 +118,22 @@ if ! run_as_root mkdir -p "$APP_DIR" || ! run_as_root cp -a "$payload_dir/." "$A
     show_error "$APP_NAME installer" "Could not install the application into $APP_DIR."
     exit 1
 fi
-if [ -f "$preserve_dir/env" ]; then run_as_root cp -p "$preserve_dir/env" "$APP_DIR/.env"; else run_as_root cp -p "$APP_DIR/installer/default.env" "$APP_DIR/.env"; fi
+if [ -f "$preserve_dir/env" ]; then
+    run_as_root cp -p "$preserve_dir/env" "$APP_DIR/.env"
+else
+    cat > "$temp_dir/default.env" <<EOF
+# Safe local OpenHub runtime coordinates. Keep credentials outside this file.
+UNS_REGISTRY=docker.io
+UNS_REPO_PREFIX=unsopenhub
+UNS_CONTROLLER_REPOSITORY=uns-openhub-controller
+UNS_POSTGRES_REPOSITORY=uns-postgres
+UNS_TAG=latest
+CONFIG_FILE=config-example.json
+CONTROLLER_USER=root
+BIND_MOUNT_LABEL=
+EOF
+    run_as_root cp -p "$temp_dir/default.env" "$APP_DIR/.env"
+fi
 if [ -f "$preserve_dir/config/config.json" ]; then
     run_as_root cp -p "$preserve_dir/config/config.json" "$APP_DIR/configs/uns-openhub-controller/config.json"
 else

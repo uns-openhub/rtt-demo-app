@@ -22,8 +22,6 @@ fi
 # from entering the downloadable installer.
 {
     git -C "$REPOSITORY_DIR" ls-files -z -- "$APP_DIR_NAME"
-    # Include the safe default template before it has been staged during local development.
-    printf '%s\0' "$APP_DIR_NAME/installer/default.env"
 } |
     tar -C "$REPOSITORY_DIR" --null --files-from=- -czf "$STAGING_DIR/payload.tar.gz"
 
