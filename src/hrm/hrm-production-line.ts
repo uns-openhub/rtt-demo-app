@@ -166,6 +166,8 @@ export class HrmProductionLine {
             if (!batch?.furnace) return [];
             return [{
               slot: index + 1,
+              batchId: batch.batchId,
+              recipeId: batch.recipeId,
               materialId: batch.materialId,
               soakingElapsedMin: batch.furnace.soakingElapsedMin,
               subState: batch.furnace.subState,

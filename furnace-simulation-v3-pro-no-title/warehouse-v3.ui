@@ -12,6 +12,7 @@
             <child><object class="GtkLabel" id="warehouse_desc"><property name="label">Material inventory and completed production records</property><property name="xalign">0</property></object></child>
           </object><packing><property name="expand">True</property></packing>
         </child>
+        <child><object class="GtkButton" id="warehouse_back"><property name="label">BACK</property></object><packing><property name="expand">False</property><property name="fill">False</property></packing></child>
       </object><packing><property name="expand">False</property></packing>
     </child>
     <child>
@@ -31,7 +32,7 @@
             <child>
               <object class="GtkTreeView" id="warehouse_tree">
                 <property name="headers-visible">True</property><property name="enable-grid-lines">horizontal</property>
-                <child internal-child="selection"><object class="GtkTreeSelection"/></child>
+                <child internal-child="selection"><object class="GtkTreeSelection"><property name="mode">multiple</property></object></child>
               </object>
             </child>
           </object>
@@ -39,7 +40,7 @@
       </object><packing><property name="expand">True</property><property name="fill">True</property></packing>
     </child>
     <child>
-      <object class="GtkLabel" id="warehouse_footer"><property name="label">Select a material and choose “Use in Furnace” to load it into the production order.</property><property name="xalign">0</property></object>
+      <object class="GtkLabel" id="warehouse_footer"><property name="label">Select 1–5 warehouse materials, then choose “Use in Furnace” to load Merge inputs.</property><property name="xalign">0</property></object>
       <packing><property name="expand">False</property></packing>
     </child>
   </object>

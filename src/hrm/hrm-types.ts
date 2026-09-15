@@ -310,6 +310,8 @@ export interface StationStatus {
   materialId?: string | undefined;
   furnaceMaterials?: Array<{
     slot: number;
+    batchId: string;
+    recipeId: string;
     materialId: string;
     soakingElapsedMin: number;
     subState: FurnacePhysicsState["subState"];

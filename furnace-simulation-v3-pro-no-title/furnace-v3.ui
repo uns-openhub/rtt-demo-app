@@ -3,8 +3,8 @@
   <requires lib="gtk+" version="3.20"/>
   <object class="GtkBox" id="furnace_root">
     <property name="orientation">vertical</property>
-    <property name="spacing">14</property>
-    <property name="margin">20</property>
+    <property name="spacing">10</property>
+    <property name="margin">14</property>
     <child>
       <object class="GtkBox">
         <property name="spacing">18</property>
@@ -20,7 +20,7 @@
             <property name="spacing">3</property>
             <child>
               <object class="GtkLabel" id="furnace_title">
-                <property name="label">Furnace Control</property>
+                <property name="label">Industrial Furnace</property>
                 <property name="xalign">0</property>
                 <attributes><attribute name="weight" value="bold"/><attribute name="scale" value="1.35"/></attributes>
               </object>
@@ -33,6 +33,10 @@
             </child>
           </object>
           <packing><property name="expand">True</property></packing>
+        </child>
+        <child>
+          <object class="GtkButton" id="furnace_back"><property name="label">BACK</property></object>
+          <packing><property name="expand">False</property><property name="fill">False</property></packing>
         </child>
       </object>
       <packing><property name="expand">False</property></packing>
@@ -57,8 +61,9 @@
             <child><object class="GtkCheckButton" id="merge_check"><property name="label">Merge submitted materials after rolling</property></object><packing><property name="left-attach">2</property><property name="top-attach">0</property><property name="width">2</property></packing></child>
             <child><object class="GtkLabel" id="flmerge_input_entry"><property name="label">Merge inputs</property><property name="xalign">0</property></object><packing><property name="left-attach">2</property><property name="top-attach">1</property></packing></child>
             <child><object class="GtkEntry" id="merge_input_entry"><property name="placeholder-text">slab-001, slab-002</property></object><packing><property name="left-attach">3</property><property name="top-attach">1</property></packing></child>
-            <child><object class="GtkLabel" id="flmerge_output_entry"><property name="label">Merge output</property><property name="xalign">0</property></object><packing><property name="left-attach">2</property><property name="top-attach">2</property></packing></child>
-            <child><object class="GtkEntry" id="merge_output_entry"><property name="placeholder-text">merged-slab</property></object><packing><property name="left-attach">3</property><property name="top-attach">2</property></packing></child>
+            <child><object class="GtkLabel" id="flmerge_output_entry"><property name="label">Material Output</property><property name="xalign">0</property></object><packing><property name="left-attach">2</property><property name="top-attach">2</property></packing></child>
+            <child><object class="GtkEntry" id="merge_output_entry"><property name="placeholder-text">Automatically follows Material No.</property></object><packing><property name="left-attach">3</property><property name="top-attach">2</property></packing></child>
+            <child><object class="GtkLabel" id="material_output_hint"><property name="label">To merge materials change Material Number.</property><property name="xalign">0</property></object><packing><property name="left-attach">3</property><property name="top-attach">3</property></packing></child>
             <child><object class="GtkBox">
               <property name="spacing">8</property>
               <child><object class="GtkButton" id="submit_production"><property name="label">Submit Production</property></object></child>
@@ -76,26 +81,29 @@
         <property name="label">FURNACE PROCESS</property>
         <property name="border-width">8</property>
         <child>
-          <object class="GtkBox"><property name="orientation">horizontal</property><property name="spacing">16</property>
-            <property name="margin">8</property>
+          <object class="GtkBox"><property name="orientation">horizontal</property><property name="spacing">12</property>
+            <property name="margin">6</property>
             <child>
-              <object class="GtkBox"><property name="orientation">vertical</property><property name="spacing">8</property>
+              <object class="GtkBox"><property name="orientation">vertical</property><property name="spacing">4</property>
                 <child><object class="GtkLabel" id="industrial_title"><property name="label">Industrial Furnace</property><property name="xalign">0</property></object></child>
-                <child><object class="GtkImage" id="furnace_drawing"><property name="width-request">640</property><property name="height-request">285</property></object><packing><property name="expand">True</property><property name="fill">True</property></packing></child>
+                <child><object class="GtkImage" id="furnace_drawing"><property name="width-request">420</property><property name="height-request">190</property></object><packing><property name="expand">False</property><property name="fill">False</property></packing></child>
               </object>
-              <packing><property name="expand">True</property><property name="fill">True</property></packing>
+              <packing><property name="expand">False</property><property name="fill">False</property></packing>
             </child>
             <child>
-              <object class="GtkBox"><property name="orientation">vertical</property><property name="spacing">10</property>
-                <child><object class="GtkLabel" id="furnace_green"><property name="label">ON</property><property name="xalign">0</property></object></child>
-                <child><object class="GtkLabel" id="furnace_red"><property name="label">OFF</property><property name="xalign">0</property></object></child>
+              <object class="GtkFrame" id="light_indicator_frame"><property name="label">FURNACE LIGHT</property><property name="shadow-type">in</property>
+                <child><object class="GtkBox"><property name="orientation">vertical</property><property name="spacing">6</property><property name="margin">10</property>
+                  <child><object class="GtkLabel" id="light_indicator_title"><property name="label">HEATING STATUS</property><property name="xalign">0</property></object></child>
+                  <child><object class="GtkLabel" id="furnace_green"><property name="label">● ON</property><property name="xalign">0</property></object></child>
+                  <child><object class="GtkLabel" id="furnace_red"><property name="label">● OFF</property><property name="xalign">0</property></object></child>
+                </object></child>
               </object>
               <packing><property name="expand">False</property></packing>
             </child>
           </object>
         </child>
       </object>
-      <packing><property name="expand">True</property><property name="fill">True</property></packing>
+      <packing><property name="expand">False</property><property name="fill">False</property></packing>
     </child>
 
     <child>
@@ -104,7 +112,7 @@
         <property name="border-width">8</property>
         <child>
           <object class="GtkGrid">
-            <property name="column-spacing">12</property><property name="row-spacing">8</property><property name="margin">8</property>
+            <property name="column-spacing">20</property><property name="row-spacing">12</property><property name="margin">14</property>
             <child><object class="GtkLabel"><property name="label">Station</property><property name="xalign">0</property></object><packing><property name="left-attach">0</property><property name="top-attach">0</property></packing></child>
             <child><object class="GtkLabel"><property name="label">Status</property><property name="xalign">0</property></object><packing><property name="left-attach">1</property><property name="top-attach">0</property></packing></child>
             <child><object class="GtkLabel"><property name="label">Temperature</property><property name="xalign">0</property></object><packing><property name="left-attach">2</property><property name="top-attach">0</property></packing></child>
@@ -138,7 +146,7 @@
           </object>
         </child>
       </object>
-      <packing><property name="expand">False</property></packing>
+      <packing><property name="expand">True</property><property name="fill">True</property></packing>
     </child>
   </object>
 </interface>

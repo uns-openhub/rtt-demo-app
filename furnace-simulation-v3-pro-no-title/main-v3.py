@@ -6,6 +6,9 @@ import shutil
 import subprocess
 import threading
 import http.cookies
+import hashlib
+import hmac
+import secrets
 from datetime import datetime
 import urllib.error
 import urllib.request
@@ -52,6 +55,8 @@ class FurnaceSimulation(Gtk.Window):
         self.warehouse_filter = None
         self.warehouse_tree = None
         self.warehouse_rows = {}
+        self.warehouse_selected_rows = {}
+        self.warehouse_footer = None
         self.login_dialog = None
         self.timeline_view = None
         self.session_label = None
@@ -68,13 +73,31 @@ class FurnaceSimulation(Gtk.Window):
         self.furnace_images = {}
         self.furnace_green = None
         self.furnace_red = None
+        self.furnace_animation_source = None
+        self.furnace_animation_phase = 0
+        self.openhub_logged_in = False
+        self.loto_active = False
+        self.loto_worker_name = None
+        self.loto_password_salt = None
+        self.loto_password_hash = None
+        self.loto_window = None
         self.openhub_token_path = os.path.join(
             os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
             "furnace-simulation", "openhub-token",
         )
+        self.loto_state_path = os.path.join(
+            os.path.dirname(self.openhub_token_path), "loto-session.json"
+        )
+        self.load_loto_session()
+        icon_path = os.path.join(self.app_dir, "Furnice-simulator-icon.png")
+        if os.path.isfile(icon_path):
+            self.set_icon_from_file(icon_path)
         self.build_ui()
         self.refresh_status()
-        GLib.idle_add(self.start_runtime)
+        if self.loto_active:
+            GLib.idle_add(self.show_loto_screen)
+        else:
+            GLib.idle_add(self.request_openhub_login)
 
     @staticmethod
     def command_ok(command):
@@ -126,6 +149,9 @@ class FurnaceSimulation(Gtk.Window):
         label.panel-value { color: #eef3f6; font-weight: 700; }
         label.window-subtitle { color: #8e9aa6; font-size: 12px; }
         button.secondary { background: #202a33; color: #e7edf2; font-weight: 700; }
+        #industrial_title { color: #f4f7f9; font-size: 19px; font-weight: 800; }
+        #light_indicator_title { color: #8e9aa6; font-size: 11px; font-weight: 800; }
+        #furnace_green, #furnace_red { font-weight: 800; padding: 8px; }
         """)
         Gtk.StyleContext.add_provider_for_screen(
             self.get_screen(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
@@ -151,6 +177,7 @@ class FurnaceSimulation(Gtk.Window):
         required = [
             "main_root", "clock_label", "ready_label", "start_button", "stop_button",
             "open_button", "warehouse_button", "uns_button", "auth_button",
+            "service_button",
             "timeline_view", "log_view", "session_label",
         ]
         required += [
@@ -189,14 +216,14 @@ class FurnaceSimulation(Gtk.Window):
         root.pack_start(frame, False, False, 0)
         self.ready_label=Gtk.Label(label="Ready to start.", xalign=0); root.pack_start(self.ready_label, False, False, 0)
         controls=Gtk.Box(spacing=10)
-        for attr,label,cb in (("start_button","▶  START RUNTIME",self.start_runtime),("stop_button","■  STOP RUNTIME",self.stop_runtime),("open_button","FURNACE",self.open_furnace),("warehouse_button","▣  WAREHOUSE",self.open_warehouse),("uns_button","◈  OPEN UNS",self.open_uns),("auth_button","OPENHUB LOGIN",self.configure_authentication)):
+        for attr,label,cb in (("start_button","▶  START RUNTIME",self.start_runtime),("stop_button","■  STOP RUNTIME",self.stop_runtime),("open_button","FURNACE",self.open_furnace),("warehouse_button","▣  WAREHOUSE",self.open_warehouse),("uns_button","◈  OPEN UNS",self.open_uns),("auth_button","OPENHUB LOGIN",self.configure_authentication),("service_button","SERVICE",self.start_loto_service)):
             b=Gtk.Button(label=label); setattr(self,attr,b); b.connect("clicked",cb); controls.pack_start(b,True,True,0)
         root.pack_start(controls, False, False, 0)
         tf=Gtk.Frame(label="STARTUP TIMELINE"); tc=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=8,margin=10); tf.add(tc)
         ts=Gtk.ScrolledWindow(); ts.set_size_request(-1,125); self.timeline_view=Gtk.TextView(editable=False,monospace=True); ts.add(self.timeline_view); tc.pack_start(ts,True,True,0)
         self.session_label=Gtk.Label(label="Started: --\nStopped: --\nRuntime duration: --",xalign=0); tc.pack_start(self.session_label,False,False,0); root.pack_start(tf,False,False,0)
         lf=Gtk.Frame(label="DIAGNOSTICS"); ls=Gtk.ScrolledWindow(); ls.set_size_request(-1,180); self.log_view=Gtk.TextView(editable=False,monospace=True); ls.add(self.log_view); lf.add(ls); root.pack_start(lf,True,True,0)
-        # Navigation buttons stay available even when runtime/OpenHub is unhealthy.
+        # Authentication is applied after the fallback controls are constructed.
         self.open_button.set_sensitive(True); self.warehouse_button.set_sensitive(True); self.uns_button.set_sensitive(True)
         return root
 
@@ -217,6 +244,7 @@ class FurnaceSimulation(Gtk.Window):
             self.warehouse_button = builder.get_object("warehouse_button")
             self.uns_button = builder.get_object("uns_button")
             self.auth_button = builder.get_object("auth_button")
+            self.service_button = builder.get_object("service_button")
             self.timeline_view = builder.get_object("timeline_view")
             self.log_view = builder.get_object("log_view")
             self.session_label = builder.get_object("session_label")
@@ -239,7 +267,7 @@ class FurnaceSimulation(Gtk.Window):
 
         self.start_button.get_style_context().add_class("primary")
         self.stop_button.get_style_context().add_class("danger")
-        for button in (self.open_button, self.warehouse_button, self.uns_button, self.auth_button):
+        for button in (self.open_button, self.warehouse_button, self.uns_button, self.auth_button, self.service_button):
             button.get_style_context().add_class("action")
         self.start_button.connect("clicked", self.start_runtime)
         self.stop_button.connect("clicked", self.stop_runtime)
@@ -247,13 +275,16 @@ class FurnaceSimulation(Gtk.Window):
         self.warehouse_button.connect("clicked", self.open_warehouse)
         self.uns_button.connect("clicked", self.open_uns)
         self.auth_button.connect("clicked", self.configure_authentication)
+        self.service_button.connect("clicked", self.start_loto_service)
         self.connect("destroy", Gtk.main_quit)
         GLib.timeout_add_seconds(1, self.update_clock)
-        # Navigation is independent from runtime health.
-        self.open_button.set_sensitive(True)
-        self.warehouse_button.set_sensitive(True)
+        # Furnace and Warehouse use authenticated OpenHub APIs.
+        self.open_button.set_sensitive(False)
+        self.warehouse_button.set_sensitive(False)
         self.uns_button.set_sensitive(True)
         self.stop_button.set_sensitive(False)
+        if self.loto_active:
+            self.apply_loto_controls()
         if getattr(self, "_ui_fallback_error", None):
             self.log_lines.append("[WARNING] " + self._ui_fallback_error + "; built-in safe UI was used.")
 
@@ -327,10 +358,261 @@ class FurnaceSimulation(Gtk.Window):
             return False
         GLib.idle_add(update)
 
+    def load_loto_session(self):
+        try:
+            with open(self.loto_state_path, "r", encoding="utf-8") as handle:
+                session = json.load(handle)
+            worker_name = session["workerName"]
+            password_salt = bytes.fromhex(session["passwordSalt"])
+            password_hash = bytes.fromhex(session["passwordHash"])
+            if (not isinstance(worker_name, str) or not worker_name.strip()
+                    or len(password_salt) < 16 or len(password_hash) != 32):
+                raise ValueError("invalid LOTO session data")
+        except FileNotFoundError:
+            return
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise RuntimeError("The saved LOTO session could not be read safely.") from error
+        self.loto_active = True
+        self.loto_worker_name = worker_name.strip()
+        self.loto_password_salt = password_salt
+        self.loto_password_hash = password_hash
+
+    def save_loto_session(self):
+        directory = os.path.dirname(self.loto_state_path)
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+        os.chmod(directory, 0o700)
+        session = {
+            "workerName": self.loto_worker_name,
+            "passwordSalt": self.loto_password_salt.hex(),
+            "passwordHash": self.loto_password_hash.hex(),
+        }
+        temporary_path = self.loto_state_path + ".tmp"
+        descriptor = os.open(
+            temporary_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600
+        )
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(session, handle, separators=(",", ":"))
+        os.replace(temporary_path, self.loto_state_path)
+        os.chmod(self.loto_state_path, 0o600)
+
+    @staticmethod
+    def loto_password_verifier(password, salt):
+        return hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), salt, 600_000
+        )
+
+    def apply_loto_controls(self):
+        if self.loto_active:
+            for button in (
+                self.start_button, self.stop_button, self.open_button,
+                self.warehouse_button, self.uns_button, self.auth_button,
+                self.service_button,
+            ):
+                button.set_sensitive(False)
+            return
+        self.start_button.set_sensitive(True)
+        self.stop_button.set_sensitive(self.session_active)
+        self.open_button.set_sensitive(self.openhub_logged_in)
+        self.warehouse_button.set_sensitive(self.openhub_logged_in)
+        self.uns_button.set_sensitive(True)
+        self.auth_button.set_sensitive(True)
+        self.service_button.set_sensitive(True)
+
+    def loto_allows_operation(self):
+        if not self.loto_active:
+            return True
+        self.show_loto_screen()
+        return False
+
+    def start_loto_service(self, *_args):
+        if self.loto_active:
+            self.show_loto_screen()
+            return
+        dialog = Gtk.Dialog(title="SERVICE / LOTO", transient_for=self, flags=0)
+        dialog.add_button("CANCEL", Gtk.ResponseType.CANCEL)
+        dialog.add_button("DONE / START SERVICE", Gtk.ResponseType.OK)
+        content = dialog.get_content_area()
+        content.set_spacing(8)
+        content.set_border_width(14)
+        worker_entry = Gtk.Entry()
+        worker_entry.set_placeholder_text("Maintenance Name / Username")
+        password_entry = Gtk.Entry()
+        password_entry.set_visibility(False)
+        password_entry.set_invisible_char("*")
+        password_entry.set_placeholder_text("LOTO Password")
+        message = Gtk.Label(xalign=0)
+        content.pack_start(Gtk.Label(label="Maintenance Name:", xalign=0), False, False, 0)
+        content.pack_start(worker_entry, False, False, 0)
+        content.pack_start(Gtk.Label(label="LOTO Password:", xalign=0), False, False, 0)
+        content.pack_start(password_entry, False, False, 0)
+        content.pack_start(message, False, False, 0)
+        dialog.set_default_response(Gtk.ResponseType.OK)
+        dialog.show_all()
+        while dialog.run() == Gtk.ResponseType.OK:
+            worker_name = worker_entry.get_text().strip()
+            password = password_entry.get_text()
+            if worker_name and password:
+                dialog.destroy()
+                self.loto_worker_name = worker_name
+                self.loto_password_salt = secrets.token_bytes(16)
+                self.loto_password_hash = self.loto_password_verifier(
+                    password, self.loto_password_salt
+                )
+                self.loto_active = True
+                self.save_loto_session()
+                self.close_secondary_windows()
+                self.apply_loto_controls()
+                self.show_loto_screen()
+                return
+            message.set_text(
+                "Invalid LOTO password. Maintenance mode was not activated."
+            )
+            password_entry.set_text("")
+        dialog.destroy()
+
+    def show_loto_screen(self):
+        if not self.loto_active:
+            return
+        if self.loto_window is not None:
+            self.loto_window.show_all()
+            self.loto_window.present()
+            return
+        window = Gtk.Window(title="MAINTENANCE MODE", transient_for=self)
+        window.set_modal(True)
+        window.set_default_size(620, 390)
+        window.set_border_width(30)
+        window.connect("delete-event", lambda *_args: True)
+        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
+        root.get_style_context().add_class("furnace-app")
+        title = Gtk.Label()
+        title.set_markup(
+            "<span size='xx-large' weight='bold' foreground='#ff6b6b'>"
+            "MAINTENANCE MODE</span>"
+        )
+        loto = Gtk.Label()
+        loto.set_markup(
+            "<span size='x-large' weight='bold' foreground='#f0b429'>"
+            "LOTO ACTIVE</span>"
+        )
+        locked = Gtk.Label()
+        locked.set_markup(
+            "<span size='large' weight='bold'>PRODUCTION CONTROLS LOCKED</span>"
+        )
+        worker = Gtk.Label(xalign=0.5)
+        worker.set_markup(
+            "<span size='large'>Maintenance: "
+            + GLib.markup_escape_text(self.loto_worker_name or "Unknown")
+            + "</span>"
+        )
+        message = Gtk.Label(
+            label="Equipment is under maintenance.", xalign=0.5
+        )
+        unlock = Gtk.Button(label="UNLOCK / FINISH SERVICE")
+        unlock.get_style_context().add_class("primary")
+        unlock.connect("clicked", self.request_loto_unlock)
+        for widget in (title, loto, locked, worker, message, unlock):
+            root.pack_start(widget, False, False, 0)
+        window.add(root)
+        self.loto_window = window
+        window.show_all()
+        window.present()
+
+    def request_loto_unlock(self, *_args):
+        dialog = Gtk.Dialog(
+            title="FINISH MAINTENANCE", transient_for=self.loto_window, flags=0
+        )
+        dialog.add_button("CANCEL", Gtk.ResponseType.CANCEL)
+        dialog.add_button("UNLOCK", Gtk.ResponseType.OK)
+        content = dialog.get_content_area()
+        content.set_spacing(8)
+        content.set_border_width(14)
+        password_entry = Gtk.Entry()
+        password_entry.set_visibility(False)
+        password_entry.set_invisible_char("*")
+        password_entry.set_placeholder_text("LOTO Password")
+        message = Gtk.Label(xalign=0)
+        content.pack_start(
+            Gtk.Label(label=f"Maintenance: {self.loto_worker_name}", xalign=0),
+            False, False, 0,
+        )
+        content.pack_start(Gtk.Label(label="LOTO Password:", xalign=0), False, False, 0)
+        content.pack_start(password_entry, False, False, 0)
+        content.pack_start(message, False, False, 0)
+        dialog.set_default_response(Gtk.ResponseType.OK)
+        dialog.show_all()
+        while dialog.run() == Gtk.ResponseType.OK:
+            candidate_hash = self.loto_password_verifier(
+                password_entry.get_text(), self.loto_password_salt
+            )
+            if hmac.compare_digest(candidate_hash, self.loto_password_hash):
+                dialog.destroy()
+                self.clear_loto_session()
+                return
+            message.set_text("Incorrect LOTO password. Maintenance mode remains active.")
+            password_entry.set_text("")
+        dialog.destroy()
+
+    def clear_loto_session(self):
+        try:
+            os.remove(self.loto_state_path)
+        except FileNotFoundError:
+            pass
+        self.loto_active = False
+        self.loto_worker_name = None
+        self.loto_password_salt = None
+        self.loto_password_hash = None
+        if self.loto_window is not None:
+            self.loto_window.destroy()
+            self.loto_window = None
+        self.apply_loto_controls()
+        self.present()
+
     def configure_authentication(self, *_args):
+        if not self.loto_allows_operation():
+            return
+        if self.openhub_logged_in:
+            self.logout_openhub()
+            return
         threading.Thread(target=self.login_worker, daemon=True).start()
 
+    def request_openhub_login(self):
+        self.configure_authentication()
+        return False
+
+    def set_openhub_login_state(self, logged_in):
+        self.openhub_logged_in = logged_in
+        self.auth_button.set_label(
+            "OPENHUB LOGOUT" if logged_in else "OPENHUB LOGIN"
+        )
+        if self.loto_active:
+            self.apply_loto_controls()
+            return False
+        self.open_button.set_sensitive(logged_in)
+        self.warehouse_button.set_sensitive(logged_in)
+        return False
+
+    def logout_openhub(self):
+        for path in (self.openhub_token_path, self.refresh_cookie_path):
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                continue
+            except OSError as error:
+                self.report_error("Could not clear the saved OpenHub session: " + str(error))
+                return
+        self.rtt_api_ready = False
+        self.set_status("OpenHub authentication", "REQUIRED", False)
+        self.ready_label.set_markup(
+            "<span size='large' weight='bold' foreground='#b42318'>OPENHUB LOGIN REQUIRED</span>"
+        )
+        self.append_log("[INFO] OpenHub session logged out.")
+        self.set_openhub_login_state(False)
+
     def run_compose(self, *args, timeout=60):
+        if self.loto_active and args and args[0] in (
+            "up", "down", "start", "stop", "restart"
+        ):
+            raise RuntimeError("LOTO is active. Runtime changes are locked.")
         if not self.compose:
             raise RuntimeError("Podman Compose is not installed.")
         command = (*self.compose, "--project-name", PROJECT_NAME,
@@ -434,6 +716,11 @@ class FurnaceSimulation(Gtk.Window):
         )
 
     def start_runtime(self, *_args):
+        if not self.loto_allows_operation():
+            return
+        if not self.openhub_logged_in:
+            self.request_openhub_login()
+            return
         self.start_button.set_sensitive(False)
         self.stop_button.set_sensitive(True)
         self.session_active = True
@@ -467,7 +754,8 @@ class FurnaceSimulation(Gtk.Window):
         except Exception as error:
             self.report_error(self.user_facing_error(error))
         finally:
-            GLib.idle_add(lambda: self.start_button.set_sensitive(True) or False)
+            if not self.loto_active:
+                GLib.idle_add(lambda: self.start_button.set_sensitive(True) or False)
 
     def wait_until_ready(self, mark_ready=True):
         for _ in range(45):
@@ -600,6 +888,8 @@ class FurnaceSimulation(Gtk.Window):
 
     def graphql(self, query, variables=None, token=None):
         """Call OpenHub GraphQL with one automatic auth retry."""
+        if self.loto_active and query.lstrip().lower().startswith("mutation"):
+            raise RuntimeError("LOTO is active. OpenHub runtime changes are locked.")
         supplied_token = token is not None
         current_token = token or self.openhub_token()
         payload = json.dumps({"query": query, "variables": variables or {}}).encode("utf-8")
@@ -783,6 +1073,7 @@ class FurnaceSimulation(Gtk.Window):
             token = token.strip()
             self.save_authentication(token, cookie)
             self.set_status("OpenHub authentication", "READY", True)
+            GLib.idle_add(self.set_openhub_login_state, True)
             self.append_log("[INFO] OpenHub login succeeded.")
             try:
                 self.graphql("query ValidateOpenHubAccess { GetRttNodes { rttNode } }", token=token)
@@ -1044,17 +1335,22 @@ class FurnaceSimulation(Gtk.Window):
             return False
 
     def mark_ready(self):
-        self.ready_label.set_markup("<span size='large' weight='bold' foreground='#16803c'>FURNACE SIMULATION READY</span>")
+        self.ready_label.set_markup("<span size='large' weight='bold' foreground='#16803c'>FURNACE SIMULATION IS READY</span>")
         self.timeline_event("Furnace Simulation", "READY")
         self.start_button.get_style_context().remove_class("start-inactive")
         self.start_button.get_style_context().add_class("start-active")
-        self.open_button.set_sensitive(True)
-        self.warehouse_button.set_sensitive(True)
-        self.uns_button.set_sensitive(True)
-        self.stop_button.set_sensitive(True)
+        if self.loto_active:
+            self.apply_loto_controls()
+        else:
+            self.open_button.set_sensitive(True)
+            self.warehouse_button.set_sensitive(True)
+            self.uns_button.set_sensitive(True)
+            self.stop_button.set_sensitive(True)
         return False
 
     def stop_runtime(self, *_args):
+        if not self.loto_allows_operation():
+            return
         threading.Thread(target=self.stop_worker, daemon=True).start()
 
     def stop_worker(self):
@@ -1120,12 +1416,17 @@ class FurnaceSimulation(Gtk.Window):
         return False
 
     def set_stopped_ui(self):
-        self.ready_label.set_text("Furnace Simulation is stopped.")
-        # Keep Furnace / Warehouse / UNS accessible after runtime stops.
-        self.open_button.set_sensitive(True)
-        self.warehouse_button.set_sensitive(True)
-        self.uns_button.set_sensitive(True)
-        self.stop_button.set_sensitive(False)
+        self.ready_label.set_markup(
+            "<span size='large' weight='bold' foreground='#b42318'>FURNACE SIMULATION IS STOP</span>"
+        )
+        # OpenHub login remains required after the runtime shuts down.
+        if self.loto_active:
+            self.apply_loto_controls()
+        else:
+            self.open_button.set_sensitive(self.openhub_logged_in)
+            self.warehouse_button.set_sensitive(self.openhub_logged_in)
+            self.uns_button.set_sensitive(True)
+            self.stop_button.set_sensitive(False)
         self.update_furnace_visual(False)
         self.start_button.get_style_context().remove_class("start-active")
         self.start_button.get_style_context().add_class("start-inactive")
@@ -1201,6 +1502,8 @@ class FurnaceSimulation(Gtk.Window):
         GLib.idle_add(update)
 
     def open_furnace(self, *_args):
+        if not self.loto_allows_operation():
+            return
         if self.furnace_window is None:
             self.furnace_window = self.create_furnace_window()
             self.furnace_window.connect(
@@ -1210,6 +1513,7 @@ class FurnaceSimulation(Gtk.Window):
                 3, self.poll_furnace_status
             )
         self.furnace_window.show_all()
+        self.furnace_window.present()
         self.refresh_furnace_status()
 
     def close_furnace_window(self, *_args):
@@ -1222,6 +1526,14 @@ class FurnaceSimulation(Gtk.Window):
         self.furnace_red = None
         self.furnace_status_labels = {}
         self.furnace_images = {}
+        if self.furnace_animation_source is not None:
+            GLib.source_remove(self.furnace_animation_source)
+            self.furnace_animation_source = None
+
+    def return_to_main_window(self, window):
+        window.hide()
+        self.deiconify()
+        self.present()
 
     def poll_furnace_status(self):
         if self.furnace_window is None:
@@ -1242,12 +1554,15 @@ class FurnaceSimulation(Gtk.Window):
         root = builder.get_object("furnace_root")
         self._set_logo(builder, 190, 55)
         window = Gtk.Window(title="Furnace Control", transient_for=self)
-        window.set_default_size(760, 680)
+        window.set_default_size(960, 640)
         window.set_border_width(18)
+        icon_path = os.path.join(self.app_dir, "Furnice-simulator-icon.png")
+        if os.path.isfile(icon_path):
+            window.set_icon_from_file(icon_path)
         window.add(root)
         self._furnace_builder = builder
         root.get_style_context().add_class("furnace-app")
-        for _name in ("submit_production", "refresh_furnace"):
+        for _name in ("submit_production", "refresh_furnace", "furnace_back"):
             _button = builder.get_object(_name)
             if _button:
                 _button.get_style_context().add_class("action")
@@ -1262,6 +1577,8 @@ class FurnaceSimulation(Gtk.Window):
         self.merge_check = builder.get_object("merge_check")
         self.merge_input_entry = builder.get_object("merge_input_entry")
         self.merge_output_entry = builder.get_object("merge_output_entry")
+        self.merge_output_entry.set_editable(False)
+        self.material_entry.connect("changed", self.sync_material_output)
         self.production_status_label = builder.get_object("production_status_label")
         self.furnace_green = builder.get_object("furnace_green")
         self.furnace_red = builder.get_object("furnace_red")
@@ -1274,10 +1591,19 @@ class FurnaceSimulation(Gtk.Window):
             }
         builder.get_object("submit_production").connect("clicked", self.submit_production)
         builder.get_object("refresh_furnace").connect("clicked", lambda *_: self.refresh_furnace_status())
+        builder.get_object("furnace_back").connect(
+            "clicked", lambda *_: self.return_to_main_window(window)
+        )
         self.refresh_available_recipes()
         self.load_furnace_images()
         self.update_furnace_visual(False)
+        self.furnace_animation_source = GLib.timeout_add(
+            650, self.advance_furnace_animation
+        )
         return window
+
+    def sync_material_output(self, material_entry):
+        self.merge_output_entry.set_text(material_entry.get_text())
 
     def load_furnace_images(self):
         self.furnace_images = {}
@@ -1286,14 +1612,14 @@ class FurnaceSimulation(Gtk.Window):
             if not os.path.isfile(path):
                 continue
             self.furnace_images[frame] = GdkPixbuf.Pixbuf.new_from_file_at_scale(
-                path, 680, 300, True
+                path, 420, 190, True
             )
 
-    def update_furnace_visual(self, running):
-        self.furnace_running = bool(running)
+    def update_furnace_visual(self, heating):
+        self.furnace_running = bool(heating)
         for label, active, text in (
-            (self.furnace_green, running, "● ON" if running else "● ON"),
-            (self.furnace_red, not running, "● OFF" if not running else "● OFF"),
+            (self.furnace_green, heating, "● ON"),
+            (self.furnace_red, not heating, "● OFF"),
         ):
             if label is not None:
                 color = "#16803c" if label is self.furnace_green and active else (
@@ -1304,18 +1630,27 @@ class FurnaceSimulation(Gtk.Window):
             if not self.furnace_material_active:
                 frame = 1
             elif self.furnace_heating:
-                frame = 4 if self.furnace_frame_is_ready else 3
+                frame = 4 if self.furnace_frame_is_ready else 3 + self.furnace_animation_phase % 2
             else:
                 frame = 2
             pixbuf = self.furnace_images.get(frame)
             if pixbuf is not None:
                 self.furnace_drawing.set_from_pixbuf(pixbuf)
 
+    def advance_furnace_animation(self):
+        if self.furnace_window is None:
+            return False
+        self.furnace_animation_phase += 1
+        self.update_furnace_visual(self.furnace_running)
+        return True
+
     @property
     def furnace_frame_is_ready(self):
         return getattr(self, "_furnace_frame_is_ready", False)
 
     def open_warehouse(self, *_args):
+        if not self.loto_allows_operation():
+            return
         if self.warehouse_window is None:
             self.warehouse_window = self.create_warehouse_window()
             self.warehouse_window.connect("destroy", self.close_warehouse_window)
@@ -1345,26 +1680,48 @@ class FurnaceSimulation(Gtk.Window):
         window = Gtk.Window(title="Warehouse", transient_for=self)
         window.set_default_size(780, 520)
         window.set_border_width(18)
+        icon_path = os.path.join(self.app_dir, "Furnice-simulator-icon.png")
+        if os.path.isfile(icon_path):
+            window.set_icon_from_file(icon_path)
         window.add(root)
         self._warehouse_builder = builder
         root.get_style_context().add_class("furnace-app")
-        for _name in ("warehouse_refresh", "warehouse_use"):
+        for _name in ("warehouse_refresh", "warehouse_use", "warehouse_back"):
             _button = builder.get_object(_name)
             if _button:
                 _button.get_style_context().add_class("action")
         self.warehouse_search = builder.get_object("warehouse_search")
+        self.warehouse_footer = builder.get_object("warehouse_footer")
         self.warehouse_search.connect("changed", self.filter_warehouse_rows)
         builder.get_object("warehouse_refresh").connect("clicked", lambda *_: self.refresh_warehouse_status())
         builder.get_object("warehouse_use").connect("clicked", self.use_selected_material)
-        self.warehouse_store = Gtk.ListStore(str, str, str, str, str, str, str)
+        builder.get_object("warehouse_back").connect(
+            "clicked", lambda *_: self.return_to_main_window(window)
+        )
+        # Keep the full warehouse record separate from the displayed row, keyed
+        # by a stable row ID so filtering never changes what was selected.
+        self.warehouse_store = Gtk.ListStore(
+            bool, str, str, str, str, str, str, str, str, str
+        )
         self.warehouse_filter = self.warehouse_store.filter_new()
         self.warehouse_filter.set_visible_func(self.warehouse_row_visible)
         tree = builder.get_object("warehouse_tree")
         self.warehouse_tree = tree
         tree.set_model(self.warehouse_filter)
-        for index, title_text in enumerate(("Material", "Quantity", "Location", "Status", "Recipe", "Batch", "Quality")):
+        tree.get_selection().set_mode(Gtk.SelectionMode.NONE)
+        toggle = Gtk.CellRendererToggle()
+        toggle.connect("toggled", self.toggle_warehouse_row)
+        tree.append_column(Gtk.TreeViewColumn("", toggle, active=0))
+        for index, title_text in enumerate(
+            ("Material", "Quantity", "Location", "Status", "Recipe", "Batch", "Quality"),
+            start=1,
+        ):
             renderer = Gtk.CellRendererText()
-            tree.append_column(Gtk.TreeViewColumn(title_text, renderer, text=index))
+            tree.append_column(
+                Gtk.TreeViewColumn(
+                    title_text, renderer, text=index, cell_background=9
+                )
+            )
         return window
 
     def filter_warehouse_rows(self, *_args):
@@ -1375,22 +1732,66 @@ class FurnaceSimulation(Gtk.Window):
         query = self.warehouse_search.get_text().strip().lower()
         if not query:
             return True
-        return any(query in str(model[iterator][index]).lower() for index in range(7))
+        return any(query in str(model[iterator][index]).lower() for index in range(1, 8))
+
+    def set_warehouse_message(self, message):
+        if self.warehouse_footer is not None:
+            self.warehouse_footer.set_text(message)
+
+    def toggle_warehouse_row(self, _renderer, path):
+        iterator = self.warehouse_filter.get_iter(path)
+        child_iterator = self.warehouse_filter.convert_iter_to_child_iter(iterator)
+        row = self.warehouse_store[child_iterator]
+        selected = bool(row[0])
+        row_id = row[8]
+
+        if not selected and len(self.warehouse_selected_rows) >= 5:
+            self.set_warehouse_message("Maximum 5 materials can be selected.")
+            return
+
+        row[0] = not selected
+        row[9] = "#233a4a" if not selected else ""
+        if selected:
+            self.warehouse_selected_rows.pop(row_id, None)
+        else:
+            self.warehouse_selected_rows[row_id] = self.warehouse_rows[row_id]
+        self.set_warehouse_message(
+            f"{len(self.warehouse_selected_rows)} warehouse material"
+            f"{'s' if len(self.warehouse_selected_rows) != 1 else ''} selected."
+        )
 
     def use_selected_material(self, *_args):
-        if self.warehouse_tree is None:
+        if not self.loto_allows_operation():
             return
-        selection = self.warehouse_tree.get_selection()
-        model, iterator = selection.get_selected()
-        if iterator is None:
+        selected_rows = []
+        if self.warehouse_store is not None:
+            for row in self.warehouse_store:
+                if row[0]:
+                    selected_rows.append(self.warehouse_rows[row[8]])
+        if not selected_rows:
+            self.set_warehouse_message("Please select at least 1 material.")
             return
-        material = model[iterator][0]
-        if material in ("", "not exposed"):
-            self.append_log("[INFO] Selected warehouse record has no exposed material ID.")
+        materials = [row["material"] for row in selected_rows]
+        if any(material in ("", "not exposed") for material in materials):
+            self.set_warehouse_message(
+                "Selected warehouse records must have an exposed Material value."
+            )
             return
         if self.furnace_window is None:
             self.open_furnace()
-        self.material_entry.set_text(material)
+        self.merge_input_entry.set_text(",".join(materials))
+        self.merge_check.set_active(len(materials) > 1)
+        self.production_status_label.set_text(
+            f"{len(materials)} warehouse materials loaded into Furnace Merge Inputs."
+        )
+        self.warehouse_selected_rows.clear()
+        for row in self.warehouse_store:
+            row[0] = False
+            row[9] = ""
+        self.set_warehouse_message(
+            f"{len(materials)} warehouse materials loaded into Furnace Merge Inputs."
+        )
+        self.furnace_window.present()
 
     def refresh_warehouse_status(self):
         threading.Thread(target=self.warehouse_status_worker, daemon=True).start()
@@ -1405,29 +1806,88 @@ class FurnaceSimulation(Gtk.Window):
     def update_warehouse_status(self, payload):
         if self.warehouse_store is None:
             return False
+        previously_selected_ids = set(self.warehouse_selected_rows)
         self.warehouse_store.clear()
+        self.warehouse_rows = {}
+        self.warehouse_selected_rows = {}
         stations = payload.get("stations") or {}
-        warehouse = stations.get("warehouse") or {}
-        state = warehouse.get("state") or {}
-        if warehouse.get("materialId") or warehouse.get("batchId"):
+        records = []
+        for batch in payload.get("queue") or []:
+            records.append({
+                "materialId": batch.get("materialId"),
+                "recipeId": batch.get("recipeId"),
+                "batchId": batch.get("batchId"),
+                "location": "production queue",
+                "status": "QUEUED",
+                "quantity": "queued",
+                "quality": "",
+            })
+        for station_name, station in stations.items():
+            if station_name == "furnace":
+                records.extend({
+                    "materialId": slot.get("materialId"),
+                    "recipeId": slot.get("recipeId"),
+                    "batchId": slot.get("batchId"),
+                    "location": f"Furnace {slot.get('slot')}",
+                    "status": slot.get("subState") or "FURNACE",
+                    "quantity": "in process",
+                    "quality": "",
+                } for slot in station.get("furnaceMaterials") or [])
+                continue
+            if station.get("materialId") or station.get("batchId"):
+                state = station.get("state") or {}
+                records.append({
+                    "materialId": station.get("materialId"),
+                    "recipeId": station.get("recipeId"),
+                    "batchId": station.get("batchId"),
+                    "location": station_name,
+                    "status": station_name.upper(),
+                    "quantity": "in process",
+                    "quality": (
+                        "PASS" if state.get("passFail") is True else
+                        "FAIL" if state.get("passFail") is False else ""
+                    ),
+                })
+        seen_records = set()
+        for record_index, record in enumerate(records):
+            batch_id = str(record.get("batchId") or "")
+            material = str(record.get("materialId") or "")
+            location = str(record["location"])
+            duplicate_key = (batch_id, material, location)
+            if duplicate_key in seen_records:
+                continue
+            seen_records.add(duplicate_key)
+            row_id = f"{batch_id}\x1f{location}\x1f{material}\x1f{record_index}"
+            warehouse_record = {
+                "material": material,
+                "quantity": str(record["quantity"]),
+                "location": location,
+                "status": str(record["status"]),
+                "recipe": str(record.get("recipeId") or ""),
+                "batch": batch_id,
+                "quality": str(record["quality"]),
+            }
+            self.warehouse_rows[row_id] = warehouse_record
+            selected = row_id in previously_selected_ids
+            if selected:
+                self.warehouse_selected_rows[row_id] = warehouse_record
             self.warehouse_store.append([
-                str(warehouse.get("materialId") or ""),
-                "available in station",
-                "warehouse",
-                "WAREHOUSE",
-                str(warehouse.get("recipeId") or ""),
-                str(warehouse.get("batchId") or ""),
-                str(state.get("passFail") if state.get("passFail") is not None else ""),
-            ])
-        for completed in payload.get("completed") or []:
-            self.warehouse_store.append([
-                "not exposed", "not exposed", "warehouse history", "COMPLETED",
-                "not exposed", str(completed.get("batchId") or ""),
-                "PASS" if completed.get("passFail") else "FAIL",
+                selected,
+                warehouse_record["material"],
+                warehouse_record["quantity"],
+                warehouse_record["location"],
+                warehouse_record["status"],
+                warehouse_record["recipe"],
+                batch_id,
+                warehouse_record["quality"],
+                row_id,
+                "#233a4a" if selected else "",
             ])
         return False
 
     def _hrm_request(self, method, path, body=None):
+        if self.loto_active and method != "GET":
+            raise RuntimeError("LOTO is active. Furnace API changes are locked.")
         for attempt in range(2):
             token = self.openhub_token()
             url = HRM_API_BASE + path
@@ -1455,6 +1915,8 @@ class FurnaceSimulation(Gtk.Window):
                 ) from error
 
     def hrm_request(self, method, path, body=None):
+        if self.loto_active and method != "GET":
+            raise RuntimeError("LOTO is active. Furnace API changes are locked.")
         self.ensure_furnace_api_ready()
         try:
             return self._hrm_request(method, path, body)
@@ -1496,8 +1958,6 @@ class FurnaceSimulation(Gtk.Window):
         self.available_recipe_ids = recipe_ids
         if self.recipe_entry is not None:
             self.recipe_entry.set_placeholder_text(recipe_ids[0])
-            if not self.recipe_entry.get_text().strip():
-                self.recipe_entry.set_text(recipe_ids[0])
         if self.production_status_label is not None:
             self.production_status_label.set_text(
                 "Available recipes: " + ", ".join(recipe_ids)
@@ -1519,10 +1979,6 @@ class FurnaceSimulation(Gtk.Window):
         furnace = stations.get("furnace") or {}
         state = furnace.get("state") or {}
         materials = furnace.get("furnaceMaterials") or []
-        material = ", ".join(
-            str(item.get("materialId"))
-            for item in materials if item.get("materialId")
-        ) or "none"
         batch_stage = "IDLE"
         batch_id = furnace.get("batchId")
         if batch_id:
@@ -1545,24 +2001,30 @@ class FurnaceSimulation(Gtk.Window):
         )
         self.furnace_material_active = bool(materials or furnace.get("occupied") or batch_id)
         self.furnace_heating = bool(
-            zone_active or sub_state in ("HEATING", "SOAKING")
+            furnace.get("occupied")
+            and (zone_active or sub_state in ("HEATING", "SOAKING"))
         )
-        self.update_furnace_visual(furnace_active)
-        zones = state.get("zones") or []
+        self.update_furnace_visual(self.furnace_heating)
+        materials_by_slot = {
+            item.get("slot"): item
+            for item in materials
+            if isinstance(item, dict) and isinstance(item.get("slot"), int)
+        }
         for index in range(1, 5):
-            zone = next((item for item in zones if item.get("zoneId") == index), {})
-            status = "HEATER ON" if zone.get("heaterOn") else "IDLE"
+            slot = materials_by_slot.get(index)
+            status = (slot.get("subState") or "IN PROCESS") if slot else "IDLE"
             temperature = (
-                f"{zone.get('measuredTempC')} °C"
-                if zone.get("measuredTempC") is not None else "not available"
+                f"{slot.get('measuredMaterialTempC')} °C"
+                if slot and slot.get("measuredMaterialTempC") is not None
+                else "not available"
             )
             self.update_furnace_card(
                 index,
                 status=status,
                 temperature=temperature,
-                material=material if index == 1 else "see Furnace 1",
-                stage=sub_state or batch_stage,
-                production=batch_id or "none",
+                material=slot.get("materialId") if slot else "none",
+                stage=slot.get("subState") if slot else batch_stage,
+                production=slot.get("batchId") if slot else "none",
             )
         return False
 
@@ -1574,6 +2036,8 @@ class FurnaceSimulation(Gtk.Window):
             labels[key.capitalize()].set_text(f"{key.capitalize()}: {value}")
 
     def submit_production(self, *_args):
+        if not self.loto_allows_operation():
+            return
         try:
             quantity = float(self.quantity_entry.get_text().strip())
         except (AttributeError, ValueError):

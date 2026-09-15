@@ -22,6 +22,7 @@ fi
 # from entering the downloadable installer.
 {
     git -C "$REPOSITORY_DIR" ls-files -z -- "$APP_DIR_NAME"
+    printf '%s\0' "$APP_DIR_NAME/Furnice-simulator-icon.png"
 } |
     tar -C "$REPOSITORY_DIR" --null --files-from=- -czf "$STAGING_DIR/payload.tar.gz"
 

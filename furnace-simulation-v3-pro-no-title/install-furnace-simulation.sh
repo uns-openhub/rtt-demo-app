@@ -101,7 +101,7 @@ if ! tail -n +"$archive_line" "$0" | tar -xzf - -C "$temp_dir"; then
 fi
 
 payload_dir="$temp_dir/furnace-simulation-v3-pro-no-title"
-if [ ! -f "$payload_dir/main-v3.py" ] || [ ! -x "$payload_dir/uns" ]; then
+if [ ! -f "$payload_dir/main-v3.py" ] || [ ! -x "$payload_dir/uns" ] || [ ! -f "$payload_dir/Furnice-simulator-icon.png" ]; then
     show_error "$APP_NAME installer" "The installer payload does not contain a complete Furnace Simulation application."
     exit 1
 fi
@@ -141,6 +141,8 @@ else
         "$APP_DIR/configs/uns-openhub-controller/config.json"
 fi
 run_as_root chmod 755 "$APP_DIR/furnace-simulation-v3" "$APP_DIR/uns"
+install -D -m 644 "$APP_DIR/Furnice-simulator-icon.png" \
+    "$HOME/.local/share/icons/hicolor/256x256/apps/furnace-simulation.png"
 if [ -d "$APP_DIR/.secrets" ]; then
     run_as_root chmod 700 "$APP_DIR/.secrets"
     run_as_root find "$APP_DIR/.secrets" -type f -exec chmod 600 {} \;
@@ -154,13 +156,14 @@ Name=Furnace Simulation
 Comment=OpenHub Furnace and HRM control
 Exec=$APP_DIR/furnace-simulation-v3
 Path=$APP_DIR
-Icon=$APP_DIR/furnace-simulation.svg
+Icon=$APP_DIR/Furnice-simulator-icon.png
 Terminal=false
 Categories=Utility;
 StartupNotify=true
 EOF
 chmod 644 "$DESKTOP_DIR/furnace-simulation.desktop"
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$DESKTOP_DIR" >/dev/null 2>&1 || true
+command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -f "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
 if command -v xdg-user-dir >/dev/null 2>&1; then
     detected_desktop_dir=$(xdg-user-dir DESKTOP 2>/dev/null || true)
     if [ -n "$detected_desktop_dir" ]; then
@@ -176,5 +179,8 @@ fi
 
 show_message "$APP_NAME installed" \
     "Furnace Simulation is installed. Launch it from the applications menu or the Furnace Simulation desktop shortcut. On first launch, OpenHub will start automatically and request your OpenHub login if no saved session is available."
+if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+    "$APP_DIR/furnace-simulation-v3" >/dev/null 2>&1 &
+fi
 exit 0
 __FURNACE_SIMULATION_PAYLOAD__

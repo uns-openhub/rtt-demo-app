@@ -36,10 +36,10 @@ tokens, or API keys. A fresh installation receives safe local defaults and the
 bundled `uns` OpenHub setup tool.
 
 After installation, double-click **Furnace Simulation** on the desktop or
-launch it from the desktop application menu. It automatically starts or reuses
-the OpenHub runtime and starts or reuses `rtt-demo-app` v6.1.12. On its first
-launch, it clearly requests an OpenHub email/username and password if there is
-no saved OpenHub session. These credentials are used only for the login
+launch it from the desktop application menu. The application first opens the
+OpenHub login dialog. After successful login, choose **START RUNTIME** to
+start or reuse the OpenHub runtime and `rtt-demo-app` v6.1.12. The login button
+then becomes **OPENHUB LOGOUT**. Credentials are used only for the login
 request; the app stores an access token in the current user's configuration
 directory.
 
