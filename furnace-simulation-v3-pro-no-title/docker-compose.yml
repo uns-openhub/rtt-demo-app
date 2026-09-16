@@ -87,7 +87,7 @@ services:
       - controller_code:/usr/src/app/controller-override
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "sh", "-c", "wget -qO- http://127.0.0.1:3200/api/healthcheck >/dev/null 2>&1 || exit 1"]
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3200/api/healthcheck"]
       interval: 30s
       timeout: 5s
       retries: 5

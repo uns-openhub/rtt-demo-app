@@ -97,7 +97,9 @@ class FurnaceSimulation(Gtk.Window):
         if self.loto_active:
             GLib.idle_add(self.show_loto_screen)
         else:
-            GLib.idle_add(self.request_openhub_login)
+            # A launch after reboot must bring the existing local runtime back up
+            # before asking the user to authenticate with OpenHub.
+            GLib.idle_add(self.start_runtime)
 
     @staticmethod
     def command_ok(command):
@@ -718,11 +720,11 @@ class FurnaceSimulation(Gtk.Window):
     def start_runtime(self, *_args):
         if not self.loto_allows_operation():
             return
-        if not self.openhub_logged_in:
-            self.request_openhub_login()
-            return
         self.start_button.set_sensitive(False)
         self.stop_button.set_sensitive(True)
+        self.ready_label.set_markup(
+            "<span size='large' weight='bold' foreground='#f0b429'>FURNACE SIMULATION IS STARTING</span>"
+        )
         self.session_active = True
         self.timeline_started_at = datetime.now()
         self.timeline_stopped_at = None
@@ -740,13 +742,18 @@ class FurnaceSimulation(Gtk.Window):
             self.ensure_secret_files()
             self.set_status("Configuration", "READY", True)
             if self.runtime_is_running():
-                self.append_log("[INFO] Existing uns-openhub-runtime detected; reusing it.")
+                self.append_log(
+                    "[INFO] Existing uns-openhub-runtime detected; reconciling its services."
+                )
             else:
-                result = self.run_compose("up", "-d", timeout=180)
-                self.append_log(result.stdout)
-                if result.returncode:
-                    raise RuntimeError(self.compose_error(result.stdout))
+                self.append_log("[INFO] Starting uns-openhub-runtime.")
                 self.runtime_started_by_app = True
+            # Compose uses the fixed project name and supplied compose file, so
+            # this converges stopped/Created services without creating another stack.
+            result = self.run_compose("up", "-d", timeout=180)
+            self.append_log(result.stdout)
+            if result.returncode:
+                raise RuntimeError(self.compose_error(result.stdout))
             self.wait_until_ready(mark_ready=False)
             self.ensure_authentication()
             self.ensure_furnace_api_ready()
@@ -759,9 +766,12 @@ class FurnaceSimulation(Gtk.Window):
 
     def wait_until_ready(self, mark_ready=True):
         for _ in range(45):
+            services_ready = True
             for service in SERVICES:
                 status = self.service_status(service)
                 self.set_status(service, status, status in ("READY", "RUNNING"))
+                if status not in ("READY", "RUNNING"):
+                    services_ready = False
                 if status in ("STOPPED", "ERROR", "UNHEALTHY"):
                     self.append_log(
                         f"[WARNING] Required service {service} is {status}. "
@@ -770,15 +780,11 @@ class FurnaceSimulation(Gtk.Window):
             openhub = self.openhub_api_ready()
             web = self.http_status("http://127.0.0.1:8180") == 200
             controller_health = self.service_status("uns-openhub-controller")
-            if openhub and controller_health in ("STOPPED", "ERROR"):
-                controller_health = "READY"
             self.set_status("OpenHub", "READY" if openhub else "WAITING", openhub)
             self.set_status("Controller health", controller_health,
                             controller_health in ("READY", "RUNNING"))
             self.set_status("Web interface", "READY" if web else "WAITING", web)
-            # The controller health endpoint confirms its PostgreSQL, MQTT, and Caddy
-            # dependencies, including when this client cannot inspect rootless containers.
-            if openhub and web:
+            if services_ready and openhub and web:
                 if mark_ready:
                     GLib.idle_add(self.mark_ready)
                 return

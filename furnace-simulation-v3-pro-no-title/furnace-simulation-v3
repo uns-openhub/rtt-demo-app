@@ -1,5 +1,13 @@
 #!/bin/sh
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+# VS Code's Snap launcher can leak a versioned XDG data directory into child
+# processes. Podman then treats it as its rootless storage location and can
+# reject its own database after the Snap revision changes.
+case "${XDG_DATA_HOME:-}" in
+    "$HOME"/snap/code/*)
+        export XDG_DATA_HOME="${XDG_DATA_HOME_VSCODE_SNAP_ORIG:-$HOME/.local/share}"
+        ;;
+esac
 # VS Code Snap can export GTK paths for its own runtime. Use the system GTK
 # modules so a desktop launch does not inherit incompatible Snap libraries.
 if [ -d /usr/lib/x86_64-linux-gnu/gtk-3.0 ]; then
