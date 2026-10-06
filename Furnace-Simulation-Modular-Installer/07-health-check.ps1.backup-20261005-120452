@@ -1,0 +1,33 @@
+# Final readiness check.
+. "$PSScriptRoot\00-common.ps1"
+
+Write-Log "STEP 07 - Final health check"
+$podman=Ensure-Podman
+$selected=$null
+foreach($endpoint in (Get-OpenHubEndpoints -Podman $podman)){
+    if(Wait-Tcp -Host $endpoint.Host -Port 3200 -TimeoutSeconds 30){ $selected=$endpoint; break }
+}
+if(-not $selected){ Fail-Step "No reachable OpenHub endpoint was found on localhost or the Podman VM." }
+$vmHost=$selected.Host
+$ports=@(
+    @{P=5432;N="PostgreSQL"},
+    @{P=1883;N="Mosquitto"},
+    @{P=9001;N="Mosquitto WebSocket"},
+    @{P=8180;N="Caddy/OpenHub Web"},
+    @{P=2019;N="Caddy Admin"},
+    @{P=9000;N="QuestDB HTTP"},
+    @{P=8812;N="QuestDB PGWire"},
+    @{P=9009;N="QuestDB ILP"},
+    @{P=3200;N="OpenHub Controller"}
+)
+$failed=$false
+foreach($x in $ports){
+    if(Wait-Tcp -Host $vmHost -Port $x.P -TimeoutSeconds 10){
+        Write-Log "$($x.N) : port $($x.P) READY" "OK"
+    }else{
+        Write-Log "$($x.N) : port $($x.P) NOT READY" "ERROR"
+        $failed=$true
+    }
+}
+if($failed){ Fail-Step "One or more backend services are not reachable. Check $script:LogFile and Podman logs." }
+Write-Log "ALL REQUIRED BACKEND CONNECTIONS ARE READY." "OK"

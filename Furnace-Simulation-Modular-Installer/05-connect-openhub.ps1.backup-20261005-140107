@@ -1,0 +1,22 @@
+# Verifies the OpenHub controller and web proxy are reachable.
+. "$PSScriptRoot\00-common.ps1"
+
+Write-Log "STEP 05 - OpenHub connection"
+$podman=Ensure-Podman
+$selected=$null
+foreach($endpoint in (Get-OpenHubEndpoints -Podman $podman)){
+    if(Wait-Tcp -ComputerName $endpoint.Host -Port 3200 -TimeoutSeconds 30){
+        $selected=$endpoint
+        break
+    }
+}
+if(-not $selected){ Fail-Step "OpenHub Controller port 3200 was not reachable on localhost or the Podman VM." }
+Write-Log "OpenHub Controller endpoint: $($selected.Address):3200 ($($selected.Source))." "OK"
+
+$health=Test-Http ($selected.Address + ":3200/api/healthcheck")
+if($health -ne 200){ Fail-Step "Controller /api/healthcheck returned HTTP $health at $($selected.Address):3200." }
+Write-Log "OpenHub Controller health endpoint returned HTTP 200." "OK"
+
+$web=Test-Http ($selected.Address + ":8180/")
+if($web -eq 200){ Write-Log "OpenHub web/Caddy returned HTTP 200 at $($selected.Address):8180." "OK" }
+else{ Write-Log "OpenHub web/Caddy returned HTTP $web at $($selected.Address):8180." "WARN" }

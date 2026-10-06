@@ -1,0 +1,337 @@
+# Furnace Simulation modular installer - shared functions
+# PowerShell 5.1 compatible. Do not put secrets in this file.
+
+$ErrorActionPreference = "Stop"
+
+$script:AppName = "Furnace Simulation"
+$script:RuntimeDataDir = Join-Path $env:LOCALAPPDATA $script:AppName
+$script:SecretsDir = Join-Path $script:RuntimeDataDir "secrets"
+$script:RuntimeEnvFile = Join-Path $script:RuntimeDataDir "runtime.env"
+$script:LogFile = Join-Path $script:RuntimeDataDir "modular-install.log"
+$script:ProjectName = "uns-openhub-runtime"
+
+function Write-Log {
+    param(
+        [Parameter(Mandatory=$true)][string]$Message,
+        [ValidateSet("INFO","OK","WARN","ERROR")][string]$Level="INFO"
+    )
+    New-Item -ItemType Directory -Force -Path $script:RuntimeDataDir | Out-Null
+    $line = "[{0}] [{1}] {2}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Level, $Message
+    Add-Content -LiteralPath $script:LogFile -Value $line
+    Write-Host $line
+}
+
+function Fail-Step {
+    param([string]$Message)
+    Write-Log $Message "ERROR"
+    throw $Message
+}
+
+function Refresh-Path {
+    $machine = [Environment]::GetEnvironmentVariable("Path","Machine")
+    $user = [Environment]::GetEnvironmentVariable("Path","User")
+    $env:Path = "$machine;$user"
+}
+
+function Get-CommandPath {
+    param([Parameter(Mandatory=$true)][string]$Name)
+    $cmd = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $candidates = @(
+        "$env:ProgramFiles\Podman\podman.exe",
+        "$env:ProgramFiles\RedHat\Podman\podman.exe",
+        "$env:LOCALAPPDATA\Programs\Podman\podman.exe",
+        "$env:LOCALAPPDATA\Microsoft\WinGet\Links\podman.exe"
+    )
+    foreach ($p in $candidates) {
+        if (Test-Path -LiteralPath $p) { return $p }
+    }
+    return $null
+}
+
+function Invoke-Native {
+    param(
+        [Parameter(Mandatory=$true)][string]$FilePath,
+        [string[]]$Arguments=@(),
+        [switch]$AllowFailure
+    )
+    $out = @(& $FilePath @Arguments 2>&1 | ForEach-Object { "$_" })
+    $code = $LASTEXITCODE
+    if (-not $AllowFailure -and $code -ne 0) {
+        throw "$FilePath failed with exit code $code`n$($out -join "`n")"
+    }
+    [pscustomobject]@{ ExitCode=$code; Output=($out -join "`n") }
+}
+
+function Install-WingetPackage {
+    param([Parameter(Mandatory=$true)][string]$Id)
+
+    if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
+        Fail-Step "WinGet is not available. Install/update Microsoft App Installer first."
+    }
+
+    # IMPORTANT: --source winget prevents a broken msstore source from blocking setup.
+    Write-Log "Installing $Id from the winget source..."
+    $r = Invoke-Native "winget.exe" @(
+        "install","--id",$Id,"--exact",
+        "--source","winget",
+        "--accept-package-agreements",
+        "--accept-source-agreements",
+        "--silent",
+        "--disable-interactivity"
+    ) -AllowFailure
+
+    if ($r.Output) { Write-Host $r.Output }
+    if ($r.ExitCode -ne 0) {
+        Fail-Step "WinGet failed to install $Id. Exit code=$($r.ExitCode).`n$($r.Output)"
+    }
+    Refresh-Path
+    Write-Log "$Id is installed." "OK"
+}
+
+function Ensure-Podman {
+    $podman = Get-CommandPath "podman.exe"
+    if (-not $podman) {
+        try {
+            Install-WingetPackage "RedHat.Podman"
+        }
+        catch {
+            Write-Log "RedHat.Podman failed; trying Podman.CLI from the winget source." "WARN"
+            Install-WingetPackage "Podman.CLI"
+        }
+        Refresh-Path
+        $podman = Get-CommandPath "podman.exe"
+    }
+    if (-not $podman) { Fail-Step "Podman is still unavailable after installation." }
+    $v = Invoke-Native $podman @("--version")
+    Write-Log "Podman: $($v.Output.Trim())" "OK"
+    return $podman
+}
+
+function Ensure-WSL {
+    if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
+        Fail-Step "WSL is not available on this Windows installation."
+    }
+    $r = Invoke-Native "wsl.exe" @("--status") -AllowFailure
+    if ($r.ExitCode -ne 0) {
+        Write-Log "WSL is not ready. Requesting WSL installation. A Windows restart may be required." "WARN"
+        Start-Process -FilePath "wsl.exe" -Verb RunAs -ArgumentList @("--install","--no-distribution") -Wait
+        $r = Invoke-Native "wsl.exe" @("--status") -AllowFailure
+        if ($r.ExitCode -ne 0) {
+            Fail-Step "WSL was requested but is not ready yet. Restart Windows and run the installer again."
+        }
+    }
+    Write-Log "WSL is ready." "OK"
+}
+
+function Ensure-PodmanMachine {
+    param([Parameter(Mandatory=$true)][string]$Podman)
+
+    $r = Invoke-Native $Podman @("machine","list","--format","{{.Name}}|{{.Running}}") -AllowFailure
+    if ($r.ExitCode -ne 0) { Fail-Step "Could not query Podman machines.`n$($r.Output)" }
+
+    $rows = @($r.Output -split "`r?`n" | Where-Object { $_ -match "\|" })
+    if ($rows.Count -eq 0) {
+        Write-Log "No Podman machine exists. Creating the default machine..."
+        $init = Invoke-Native $Podman @("machine","init") -AllowFailure
+        if ($init.Output) { Write-Host $init.Output }
+        if ($init.ExitCode -ne 0) { Fail-Step "Podman machine init failed.`n$($init.Output)" }
+        $r = Invoke-Native $Podman @("machine","list","--format","{{.Name}}|{{.Running}}")
+        $rows = @($r.Output -split "`r?`n" | Where-Object { $_ -match "\|" })
+    }
+
+    $machine = $null
+    foreach ($row in $rows) {
+        $p = $row -split "\|",2
+        if ($p.Count -eq 2) {
+            $machine = [pscustomobject]@{ Name=$p[0].Trim().TrimEnd("*"); Running=($p[1].Trim().ToLower() -eq "true") }
+            break
+        }
+    }
+    if (-not $machine) { Fail-Step "A Podman machine exists but could not be parsed." }
+
+    if (-not $machine.Running) {
+        Write-Log "Starting Podman machine '$($machine.Name)'..."
+        $s = Invoke-Native $Podman @("machine","start",$machine.Name) -AllowFailure
+        if ($s.Output) { Write-Host $s.Output }
+        if ($s.ExitCode -ne 0) { Fail-Step "Podman machine start failed.`n$($s.Output)" }
+    }
+    [void](Invoke-Native $Podman @("info"))
+    Write-Log "Podman machine is ready." "OK"
+}
+
+function Find-ComposeFile {
+    param([Parameter(Mandatory=$true)][string]$BaseDir)
+
+    $candidates = @(
+        (Join-Path $BaseDir "docker-compose.yml"),
+        (Join-Path $BaseDir "_internal\docker-compose.yml"),
+        (Join-Path $BaseDir "furnace-simulation-v3-pro-no-title\docker-compose.yml"),
+        (Join-Path $BaseDir "furnace-simulation-v3-pro-no-title\_internal\docker-compose.yml")
+    )
+
+    foreach ($c in $candidates) {
+        if (Test-Path -LiteralPath $c) { return $c }
+    }
+
+    # Search only a few levels to avoid scanning the whole C: drive.
+    try {
+        $found = Get-ChildItem -LiteralPath $BaseDir -Filter "docker-compose.yml" -File -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($found) { return $found.FullName }
+    } catch {}
+    return $null
+}
+
+function Get-Runtime {
+    # The scripts can be shipped beside the runtime or inside the installed app.
+    $roots = @(
+        (Split-Path -Parent $PSScriptRoot),
+        $PSScriptRoot,
+        (Join-Path $env:LOCALAPPDATA "Programs\Furnace Simulation"),
+        (Join-Path $env:LOCALAPPDATA "Furnace Simulation"),
+        (Join-Path $env:ProgramFiles "Furnace Simulation"),
+        (Join-Path ${env:ProgramFiles(x86)} "Furnace Simulation")
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -Unique
+
+    foreach ($root in $roots) {
+        $compose = Find-ComposeFile $root
+        if ($compose) {
+            $dir = Split-Path -Parent $compose
+            $cfg = Get-ChildItem -LiteralPath $dir -Filter "config.json" -File -Recurse -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+            if (-not $cfg) {
+                $cfg = Get-ChildItem -LiteralPath $dir -Filter "config-example.json" -File -Recurse -ErrorAction SilentlyContinue |
+                    Select-Object -First 1
+            }
+            return [pscustomobject]@{
+                Root=$root; ComposeFile=$compose; ComposeDir=$dir
+                ConfigFile=if($cfg){$cfg.FullName}else{$null}
+            }
+        }
+    }
+    return $null
+}
+
+function Ensure-RuntimeEnv {
+    param([Parameter(Mandatory=$true)]$Runtime)
+
+    if (-not $Runtime.ConfigFile) {
+        Fail-Step "OpenHub controller config.json/config-example.json was not found beside the runtime."
+    }
+
+    New-Item -ItemType Directory -Force -Path $script:RuntimeDataDir | Out-Null
+    New-Item -ItemType Directory -Force -Path $script:SecretsDir | Out-Null
+
+    $existing = @{}
+    if (Test-Path -LiteralPath $script:RuntimeEnvFile) {
+        foreach ($line in [IO.File]::ReadAllLines($script:RuntimeEnvFile)) {
+            if ($line -match '^\s*([^#=][^=]*)=(.*)$') { $existing[$matches[1].Trim()]=$matches[2] }
+        }
+    }
+
+    if (-not $existing["POSTGRES_PASSWORD"]) {
+        $bytes=New-Object byte[] 24
+        [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+        $existing["POSTGRES_PASSWORD"]=(-join ($bytes | ForEach-Object { $_.ToString("x2") }))
+    }
+
+    $defaults=[ordered]@{
+        UNS_REGISTRY="docker.io"
+        UNS_REPO_PREFIX="unsopenhub"
+        UNS_CONTROLLER_REPOSITORY="uns-openhub-controller"
+        UNS_POSTGRES_REPOSITORY="uns-postgres"
+        UNS_TAG="latest"
+        CONFIG_FILE=(Split-Path $Runtime.ConfigFile -Leaf)
+        CONTROLLER_USER="root"
+        BIND_MOUNT_LABEL=""
+        POSTGRES_PASSWORD=$existing["POSTGRES_PASSWORD"]
+    }
+
+    foreach($k in @($defaults.Keys)) {
+        if ($existing.ContainsKey($k) -and $k -ne "CONFIG_FILE" -and $k -ne "POSTGRES_PASSWORD") {
+            $defaults[$k]=$existing[$k]
+        }
+    }
+
+    $lines=New-Object System.Collections.Generic.List[string]
+    foreach($k in $defaults.Keys){ [void]$lines.Add("$k=$($defaults[$k])") }
+    $utf8=New-Object System.Text.UTF8Encoding($false)
+    [IO.File]::WriteAllLines($script:RuntimeEnvFile,[string[]]$lines,$utf8)
+
+    # These are placeholders used by the existing Windows runtime design.
+    foreach($name in @("infisical_token","infisical_project_id","infisical_site_url")){
+        $p=Join-Path $script:SecretsDir $name
+        if(-not (Test-Path $p) -or (Get-Item $p).Length -eq 0){
+            $bytes=New-Object byte[] 48
+            [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+            $value=[Convert]::ToBase64String($bytes).Replace("+","-").Replace("/","_").TrimEnd("=")
+            [IO.File]::WriteAllText($p,$value+"`n",$utf8)
+        }
+    }
+    Write-Log "Runtime environment and local secret files are ready." "OK"
+}
+
+function Invoke-Compose {
+    param(
+        [Parameter(Mandatory=$true)][string]$Podman,
+        [Parameter(Mandatory=$true)]$Runtime,
+        [Parameter(Mandatory=$true)][string[]]$Arguments
+    )
+    Push-Location $Runtime.ComposeDir
+    try {
+        $env:FURNACE_SECRETS_DIR=$script:SecretsDir
+        $env:FURNACE_ENV_FILE=$script:RuntimeEnvFile
+        & $Podman "compose" "--project-name" $script:ProjectName "--env-file" $script:RuntimeEnvFile "-f" $Runtime.ComposeFile @Arguments
+        if ($LASTEXITCODE -ne 0) {
+            Fail-Step "podman compose $($Arguments -join ' ') failed with exit code $LASTEXITCODE."
+        }
+    } finally { Pop-Location }
+}
+
+function Wait-Tcp {
+    param([string]$ComputerName="127.0.0.1",[int]$Port,[int]$TimeoutSeconds=120)
+    $deadline=(Get-Date).AddSeconds($TimeoutSeconds)
+    while((Get-Date) -lt $deadline){
+        $client=New-Object System.Net.Sockets.TcpClient
+        try {
+            $a=$client.BeginConnect($ComputerName,$Port,$null,$null)
+            if($a.AsyncWaitHandle.WaitOne(1000,$false) -and $client.Connected){$client.Close();return $true}
+        } catch {} finally {$client.Close()}
+        Start-Sleep -Seconds 2
+    }
+    return $false
+}
+
+function Test-Http {
+    param([Parameter(Mandatory=$true)][string]$Url)
+    try {
+        $r=Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+        return [int]$r.StatusCode
+    } catch {
+        return 0
+    }
+}
+
+function Get-PodmanVmAddress {
+    param([Parameter(Mandatory=$true)][string]$Podman)
+    $machine = Ensure-PodmanMachine -Podman $Podman
+    $r = Invoke-Native $Podman @("machine","ssh",$machine,"ip","-4","-o","addr","show") -AllowFailure
+    if ($r.ExitCode -ne 0) { throw "Could not query the Podman machine address.`n$($r.Output)" }
+    $addresses = [regex]::Matches($r.Output, '(?m)^\d+:\s+(\S+).*?\binet\s+((?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3})/')
+    foreach ($match in $addresses) {
+        $interface = $match.Groups[1].Value
+        $address = $match.Groups[2].Value
+        if ($interface -notmatch '^(lo|podman|cni|veth|docker|br-)' -and $address -notmatch '^(127\.|169\.254\.)') { return $address }
+    }
+    throw "No usable IPv4 address was found for the Podman machine."
+}
+
+function Get-OpenHubEndpoints {
+    param([Parameter(Mandatory=$true)][string]$Podman)
+    $vm = Get-PodmanVmAddress -Podman $Podman
+    return @(
+        [pscustomobject]@{ Host='127.0.0.1'; Address='http://127.0.0.1'; Source='Windows host published ports' },
+        [pscustomobject]@{ Host=$vm; Address="http://$vm"; Source='Podman VM address' }
+    )
+}

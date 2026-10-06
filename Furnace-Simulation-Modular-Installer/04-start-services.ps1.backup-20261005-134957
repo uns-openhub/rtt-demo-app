@@ -1,0 +1,19 @@
+# Starts the existing Compose stack.
+# PostgreSQL, Mosquitto, Caddy and QuestDB are CONTAINERS in this project;
+# do not install separate native copies that can steal ports 5432/1883/8180/9000.
+. "$PSScriptRoot\00-common.ps1"
+
+Write-Log "STEP 04 - Start backend services"
+$podman=Ensure-Podman
+Ensure-WSL
+Ensure-PodmanMachine -Podman $podman
+
+$runtime=Get-Runtime
+if(-not $runtime){ Fail-Step "Runtime compose file not found." }
+Ensure-RuntimeEnv -Runtime $runtime
+
+Write-Log "Pulling required images..."
+Invoke-Compose -Podman $podman -Runtime $runtime -Arguments @("pull")
+Write-Log "Starting PostgreSQL, Mosquitto, Caddy, QuestDB and OpenHub controller..."
+Invoke-Compose -Podman $podman -Runtime $runtime -Arguments @("up","-d")
+Write-Log "Compose stack started." "OK"

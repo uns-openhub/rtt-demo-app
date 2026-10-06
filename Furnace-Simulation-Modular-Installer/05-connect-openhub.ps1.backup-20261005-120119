@@ -1,0 +1,17 @@
+# Verifies the OpenHub controller and web proxy are reachable.
+. "$PSScriptRoot\00-common.ps1"
+
+Write-Log "STEP 05 - OpenHub connection"
+if(-not (Wait-Tcp -Port 3200 -TimeoutSeconds 180)){ Fail-Step "OpenHub Controller port 3200 did not become reachable." }
+Write-Log "OpenHub Controller TCP 127.0.0.1:3200 is reachable." "OK"
+
+$health=Test-Http "http://127.0.0.1:3200/api/healthcheck"
+if($health -ne 200){
+    Write-Log "Controller /api/healthcheck returned HTTP $health. The port is reachable, but controller health is not confirmed." "WARN"
+}else{
+    Write-Log "OpenHub Controller health endpoint returned HTTP 200." "OK"
+}
+
+$web=Test-Http "http://127.0.0.1:8180/"
+if($web -eq 200){ Write-Log "OpenHub web/Caddy returned HTTP 200." "OK" }
+else{ Write-Log "OpenHub web/Caddy returned HTTP $web." "WARN" }

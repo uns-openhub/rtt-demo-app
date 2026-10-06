@@ -1,0 +1,18 @@
+# Verifies the UNS-facing controller endpoint used by the application.
+. "$PSScriptRoot\00-common.ps1"
+
+Write-Log "STEP 06 - UNS connection"
+if(-not (Wait-Tcp -Port 3200 -TimeoutSeconds 60)){ Fail-Step "UNS controller connection failed: 127.0.0.1:3200 is unreachable." }
+
+$graphql=Test-Http "http://127.0.0.1:3200/graphql"
+if($graphql -eq 200 -or $graphql -eq 405){
+    Write-Log "UNS/OpenHub GraphQL endpoint is reachable (HTTP $graphql)." "OK"
+}else{
+    Write-Log "GraphQL endpoint returned HTTP $graphql. Authentication/API readiness still needs to be checked by the GUI." "WARN"
+}
+
+$web=Test-Http "http://127.0.0.1:8180/"
+if($web -eq 200){ Write-Log "UNS web path through Caddy is reachable." "OK" }
+else{ Write-Log "Caddy web endpoint returned HTTP $web." "WARN" }
+
+Write-Log "UNS transport connection is ready. User authentication remains in Furnace Simulation/OpenHub login." "OK"

@@ -1,0 +1,98 @@
+{
+  "uns": {
+    "graphql": "http://uns-openhub-controller:3200/graphql",
+    "rest": "http://uns-openhub-controller:3200/api",
+    "env": "prod",
+    "processName": "controller"
+  },
+
+  "infra": {
+    "host": "mosquitto"
+  },
+
+  "pg": {
+    "user": "uns",
+    "host": "postgres",
+    "port": 5432,
+    "database": "uns",
+    "isPoolConnection": true,
+    "searchTextConfig": "public.uns_slovenian",
+    "password": {
+      "key": "POSTGRES_PASSWORD",
+      "provider": "env"
+    },
+    "ssl": false
+  },
+
+  "server": {
+    "apiEndpoint": "/api",
+    "docsEndpoint": "/docs",
+    "graphqlEndpoint": "/graphql",
+    "ip": "uns-openhub-controller",
+    "port": 3200,
+    "cluster": true,
+    "infisicalSecretCacheEnabled": true,
+    "infisicalTokenReloadSeconds": 86400,
+    "clusterTimings": {
+      "masterHeartbeatMs": 1000,
+      "masterStaleThresholdMs": 25000,
+      "electionTimeoutMs": 6000,
+      "initialHeartbeatWaitMs": 3000,
+      "electionScoreIntervalMs": 7000
+    }
+  },
+
+  "frontend": {
+    "url": "http://uns-openhub-controller:3200/"
+  },
+
+  "unsApiGlobal": {
+    "baseUrl": "http://caddy:8180",
+    "apiBasePath": "/api/catchall",
+    "swaggerPath": "/uns-api-global/general-api/catchall-swagger.json"
+  },
+
+  "questdb": {
+    "configurationString": "http::addr=questdb:9000;auto_flush=on"
+  },
+
+  "addons": {
+    "repositorySources": [
+      {
+        "id": "uns-openhub-public",
+        "provider": "github",
+        "owner": "uns-openhub",
+        "versions": {
+          "mode": "releases",
+          "includePrereleases": false
+        }
+      }
+    ]
+  },
+
+  "caddy": {
+    "adminUrl": "http://caddy:2019/",
+    "proxyHost": "http://caddy:8180",
+    "serverName": "default",
+    "listen": [
+      ":8180"
+    ],
+    "adminListen": ":2019",
+    "allowedOrigins": [
+      "http://localhost:8180",
+      "http://localhost:3200",
+      "http://localhost:4200"
+    ],
+    "baseConfig": {
+      "apps": {
+        "http": {
+          "servers": {
+            "default": {
+              "routes": []
+            }
+          }
+        }
+      }
+    }
+  }
+}
