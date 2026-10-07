@@ -289,6 +289,10 @@ export const GeneratedAttributes = {
    */
   "previous-material": "previous-material",
   /**
+   * Complete predecessor list for a material merge, encoded in one scalar JSON packet.
+   */
+  "previous-materials": "previous-materials",
+  /**
    * Scalar lifecycle state for an object at a process step.
    */
   "process-state": "process-state",
@@ -324,6 +328,10 @@ export const GeneratedAttributes = {
    * Personnel role.
    */
   "role": "role",
+  /**
+   * Completed rolling pass event.
+   */
+  "rolling-pass": "rolling-pass",
   /**
    * Current slot or material position index.
    */
@@ -372,6 +380,10 @@ export const GeneratedAttributes = {
    * Tensile strength.
    */
   "tensile-strength": "tensile-strength",
+  /**
+   * Measured material thickness.
+   */
+  "thickness": "thickness",
   /**
    * Drive or shaft torque.
    */
@@ -452,6 +464,7 @@ export const GeneratedAttributeDescriptions: Record<keyof typeof GeneratedAttrib
   "presence": "Personnel presence.",
   "pressure": "Pressure.",
   "previous-material": "Previous material identity before the current process-location identifier was assigned.",
+  "previous-materials": "Complete predecessor list for a material merge, encoded in one scalar JSON packet.",
   "process-state": "Scalar lifecycle state for an object at a process step.",
   "product-code": "Product code.",
   "quantity": "Material quantity.",
@@ -461,6 +474,7 @@ export const GeneratedAttributeDescriptions: Record<keyof typeof GeneratedAttrib
   "refill-required": "Refill required.",
   "revision": "Product revision.",
   "role": "Personnel role.",
+  "rolling-pass": "Completed rolling pass event.",
   "slot-index": "Current slot or material position index.",
   "specification": "Technical specifications.",
   "speed": "Operating speed.",
@@ -473,6 +487,7 @@ export const GeneratedAttributeDescriptions: Record<keyof typeof GeneratedAttrib
   "task-list": "Task list.",
   "temperature": "Temperature of the resource.",
   "tensile-strength": "Tensile strength.",
+  "thickness": "Measured material thickness.",
   "torque": "Drive or shaft torque.",
   "total-flow": "Total flow.",
   "utilization": "Resource utilization.",
@@ -742,6 +757,10 @@ const GeneratedAttributesByTypeBase = {
      * Scalar lifecycle state for an object at a process step.
      */
     "process-state": "process-state",
+    /**
+     * Complete predecessor list for a material merge, encoded in one scalar JSON packet.
+     */
+    "previous-materials": "previous-materials",
   },
   "personnel": {
     /**

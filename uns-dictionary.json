@@ -213,6 +213,10 @@
         {
           "key": "process-state",
           "sortOrder": 30
+        },
+        {
+          "key": "previous-materials",
+          "sortOrder": 21
         }
       ],
       "family": "material-lineage",
@@ -1009,6 +1013,40 @@
         "en": "Work order ID.",
         "sl": "Identifikator delovnega naloga."
       }
+    },
+    "thickness": {
+      "label": "Thickness",
+      "description": "Measured material thickness.",
+      "valueType": "number",
+      "preferredUom": "mm",
+      "presentationKind": "gauge",
+      "defaultAggregation": "last"
+    },
+    "rolling-pass": {
+      "label": "Rolling pass",
+      "description": "Completed rolling pass event.",
+      "valueType": "table",
+      "presentationKind": "event"
+    },
+    "previous-materials": {
+      "label": "Previous materials",
+      "description": "Complete predecessor list for a material merge, encoded in one scalar JSON packet.",
+      "valueType": "string",
+      "presentationKind": "state",
+      "relationshipEvidence": {
+        "defaultStatus": "suggested",
+        "observedAtFrom": "packetTimestamp",
+        "ownerEndpoint": "target",
+        "relationshipKey": "material-renumbering",
+        "relationshipReviewPolicy": "suggest",
+        "sourceFullTopicFrom": "nearestPriorLifecycleObjectFullTopic",
+        "sourceObjectIdFrom": "value[]",
+        "sourceObjectType": "material",
+        "targetObjectIdFrom": "ownerObjectId",
+        "targetObjectType": "material",
+        "valueEndpoint": "source"
+      },
+      "systemRole": "relationship-evidence"
     }
   },
   "relationships": {

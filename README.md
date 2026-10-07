@@ -282,6 +282,28 @@ curl -s -X POST "http://localhost:3200/api/system/hrm/service/rtt-demo-app/recip
 - In this app, warehouse quality facts and terminal material outcomes are published without validity metadata; they are queryable facts/history, not active UI states.
 - Material object IDs are process-location identities derived from the business `materialId`: the first process identity stays `slab-001`, the next location is `slab-001-1`, then `slab-001-2`, and so on.
 - The `previous-material` attribute carries `relationship-evidence` metadata for `material-renumbering`, so a controller can materialize edges such as `slab-001 -> slab-001-1 -> slab-001-2`.
+- A merge publishes one `previous-materials` Data packet with the complete,
+  deduplicated predecessor list encoded as a JSON string. UNS Kit Data wire
+  validation accepts scalar strings/numbers, so this is intentionally not a
+  native array. The controller needs the reviewed `previous-materials`
+  relationship definition with `sourceObjectIdFrom: "value[]"` and list-decoding
+  support. Single transitions keep the existing `previous-material` scalar
+  contract. Links remain suggested unless their schema/review policy says
+  otherwise; publishing evidence does not approve lineage.
+- Upgrade existing installations by reviewing and installing the new
+  `previous-materials`, `thickness`, and `rolling-pass` definitions. Do not
+  overwrite a package-owned `previous-material` definition. An older controller
+  without explicit list decoding is not a supported merge materializer for
+  this publisher; update controller/schema before switching the simulator.
+- `equipment/stand-1/thickness` and warehouse material `thickness` are numeric
+  gauges in mm (`defaultAggregation: "last"`). `rolling-pass` contains completed
+  pass Table records; `inspection-result` contains laboratory Table records.
+  The pusher `output-quantity` counter is unchanged. Existing archived
+  `output-quantity`/`inspection-result` scalar readings remain historical data;
+  consumers should prefer the new thickness topics and fall back explicitly.
+- Warehouse `EXITED` location records retain the warehouse entry time and
+  `WAREHOUSE` stage. Only then does the runtime batch become `DONE`/`FAILED`,
+  preserving the actual visit interval for archived traces.
 - API/status payloads still expose the business `materialId` (`slab-001`) so external submit/query workflows do not need to know the UNS stage suffix.
 - `dataGroup` is storage/table routing metadata. In this demo it separates raw data by aggregate asset (`hrm_pusher_furnace`, `hrm_descaling`, `hrm_stand_1`, `hrm_warehouse`) and by dynamic sibling groups such as `batch` and `pass`; it is not used to model sub-asset hierarchy.
 - Sub-assets should be modeled by putting the full parent asset path in `topic`
