@@ -206,18 +206,18 @@ export class MqttHrmTransport implements IHrmTransport {
     batch: HrmBatch,
     time: string,
     dataGroup: string,
-    previousMaterialObjectId?: string,
   ) {
     const previousMaterialIds = batch.previousMaterialObjectIds?.length
       ? batch.previousMaterialObjectIds
       : this.previousMaterialObjectId(batch)
         ? [this.previousMaterialObjectId(batch)!]
         : [];
-    const value = previousMaterialObjectId ?? previousMaterialIds[0];
+    const ids = [...new Set(previousMaterialIds)];
+    const value = ids.length > 1 ? JSON.stringify(ids) : ids[0];
     if (!value) return undefined;
 
     return {
-      attribute: GeneratedAttributes["previous-material"],
+      attribute: ids.length > 1 ? GeneratedAttributes["previous-materials"] : GeneratedAttributes["previous-material"],
       description: previousMaterialIds.length <= 1
         ? "Prejšnja oznaka materiala pred prehodom na trenutno lokacijo"
         : "Prejšnje oznake materiala pred združitvijo v trenutno oznako",
@@ -228,7 +228,7 @@ export class MqttHrmTransport implements IHrmTransport {
         valueEndpoint: "source" as const,
         sourceObjectType: GeneratedObjectTypes["material"],
         targetObjectType: GeneratedObjectTypes["material"],
-        sourceObjectIdFrom: "value",
+        sourceObjectIdFrom: ids.length > 1 ? "value[]" : "value",
         targetObjectIdFrom: "ownerObjectId",
         observedAtFrom: "packetTimestamp",
         defaultStatus: "suggested" as const,
@@ -261,19 +261,17 @@ export class MqttHrmTransport implements IHrmTransport {
     const virtualGroup = this.resolveVirtualGroup(assetId, { virtualGroup: "asset" });
     const previousMaterialObjectIds = this.previousMaterialObjectIds(batch);
     if (previousMaterialObjectIds.length <= 1) return;
-    for (const previousMaterialObjectId of previousMaterialObjectIds) {
-      const attribute = this.materialRelationshipEvidenceAttribute(batch, time, dataGroup, previousMaterialObjectId);
-      if (!attribute) continue;
-      await this.publishMqttMessage({
-        topic: topicBase,
-        asset: assetId,
-        assetDescription,
-        objectType: GeneratedObjectTypes["material"],
-        objectId: this.materialObjectId(batch),
-        virtualGroup,
-        attributes: [attribute],
-      });
-    }
+    const attribute = this.materialRelationshipEvidenceAttribute(batch, time, dataGroup);
+    if (!attribute) return;
+    await this.publishMqttMessage({
+      topic: topicBase,
+      asset: assetId,
+      assetDescription,
+      objectType: GeneratedObjectTypes["material"],
+      objectId: this.materialObjectId(batch),
+      virtualGroup,
+      attributes: [attribute],
+    });
   }
 
   private intervalValidity(): { validityMode: "interval"; expectedIntervalMs: number } {
@@ -853,7 +851,10 @@ export class MqttHrmTransport implements IHrmTransport {
           data: this.dataPayload(time, dataGroup, { value: state.measuredVibrationMmS, uom: MEASUREMENT_UOM.milimeterPerSecond }),
         },
         {
-          attribute: GeneratedAttributes["output-quantity"],
+          attribute: GeneratedAttributes["thickness"],
+          valueType: "number",
+          presentationKind: "gauge",
+          defaultAggregation: "last",
           description: "Merjena debelina po trenutnem prehodu",
           ...this.intervalValidity(),
           data: this.dataPayload(time, dataGroup, { value: state.measuredThicknessMm, uom: MEASUREMENT_UOM.milimeter }),
@@ -880,7 +881,10 @@ export class MqttHrmTransport implements IHrmTransport {
       virtualGroup,
       attributes: [
         {
-          attribute: GeneratedAttributes["inspection-result"],
+          attribute: GeneratedAttributes["thickness"],
+          valueType: "number",
+          presentationKind: "gauge",
+          defaultAggregation: "last",
           description: "Končna izmerjena debelina",
           data: this.dataPayload(time, dataGroup, { batchDataGroup: HRM_DATA_GROUPS.batch, value: state.finalThicknessMm, uom: MEASUREMENT_UOM.milimeter }),
         },
@@ -1019,7 +1023,7 @@ export class MqttHrmTransport implements IHrmTransport {
       objectId: "stand-1",
       attributes: [
         {
-          attribute: GeneratedAttributes["output-quantity"],
+          attribute: GeneratedAttributes["rolling-pass"],
           description: "Dogodek zaključka valjarskega prehoda",
           ...this.lifecycleValidity("DONE"),
           table: this.tablePayload(time, dataGroup, {

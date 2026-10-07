@@ -726,13 +726,14 @@ export class HrmProductionLine {
       const finalStage: BatchStage = passFail ? "DONE" : "FAILED";
       logger.info(`HRM: Batch ${batch.batchId} ${finalStage} — passFail=${passFail}`);
       this.warehouseBatchId = undefined;
-      this.moveToStage(batch.batchId, finalStage, completedAt);
       this.completed.push({ batchId: batch.batchId, completedAt, passFail });
       if (this.completed.length > 100) this.completed.shift();
       this.emitMaterialTransition(
         this.config.productionLine.warehouse.assetId, this.config.productionLine.warehouse.description,
         batch, "EXITED", completedAt, durationMin,
       );
+      // Snapshot the warehouse visit before final status resets its entry time.
+      this.moveToStage(batch.batchId, finalStage, completedAt);
       this.emitAssetMaterialOccupancy(
         this.config.productionLine.warehouse.assetId,
         this.config.productionLine.warehouse.description,
