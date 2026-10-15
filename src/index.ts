@@ -16,6 +16,7 @@ import {
 import type { IApiProxyOptions } from "@uns-kit/core/uns/uns-interfaces.js";
 import { serviceApis } from "./api-routes.js";
 import { initHrm } from "./hrm/hrm-index.js";
+import { registerFurnaceAssetDataOffer } from "./hrm/asset-data-catalog.js";
 import {
   AssetIdentityPublicationProvider,
   resolveAssetIdentityMqttInstanceName,
@@ -72,6 +73,18 @@ async function main() {
         },
       },
     });
+    try {
+      await registerFurnaceAssetDataOffer({
+        config: config.hrm,
+        identities: identityProvider,
+        register: offer => apiInput.registerDataOffer(offer),
+        processName: config.uns.processName!,
+        ...(process.env["UNS_API_BASE_PATH"] ? { apiBasePath: process.env["UNS_API_BASE_PATH"] } : {}),
+      });
+    } catch {
+      // Catalog registration must not stop the simulator or expose proof material.
+      logger.warn("Furnace Asset data offer is unavailable; verify the configured identity association.");
+    }
   } else {
     logger.warn("No HRM config found. Nothing to simulate.");
   }

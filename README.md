@@ -386,3 +386,21 @@ pnpm run start        # run compiled dist/index.js
 pnpm run hrm:submit   # interactive prompt → submit a batch to the production line
 pnpm run hrm:watch    # live dashboard — refreshes every 2s
 ```
+
+
+## Optional identity-aware furnace Catalog offer
+
+With `hrm.productionLine.furnace.identity` explicitly configured and its provider
+association reviewed/resolved by the controller before startup, the demo
+registers a **Furnace zone 1 temperature** offer through the normal Data Catalog
+API. Its `metadata.assetIdentity` contains the stable Asset ID and relative
+Attribute `equipment/zone-1/temperature`, so an identity-aware Catalog can follow
+verified location changes without changing the offer ID. The existing production
+status GET operation remains available through the configured API base path.
+
+Unconfigured, unresolved or provider-only identity evidence does not register
+this offer. If an association is reviewed after startup, restart the demo to
+register it. Identity-aware history also needs compatible controller/API readers
+and an archiver configured to persist identity enrichment. The offer metadata
+contains no identity proof or telemetry topic path. Stopping the demo disables
+its live business API; archived values can remain accessible independently.
