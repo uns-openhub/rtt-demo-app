@@ -78,6 +78,23 @@ const rollingStandConfigSchema = assetConfigSchema.extend({
   maxMotorPowerKw: z.number().positive(),
   maxForceKn: z.number().positive(),
   durationMinPerPass: z.number().positive(),
+  mobileCassette: assetConfigSchema.extend({
+    assetId: z.string().regex(/^[A-Za-z0-9._-]{1,100}$/),
+    identity: assetIdentitySchema,
+    initialLocation: z.enum(["stand", "store", "workshop"]).default("stand"),
+    storeAssetId: z.string().regex(/^[A-Za-z0-9._-]{1,100}$/),
+    workshopAssetId: z.string().regex(/^[A-Za-z0-9._-]{1,100}$/),
+    upperRoll: assetConfigSchema.extend({
+      assetId: z.string().regex(/^[A-Za-z0-9._-]{1,100}$/),
+      identity: assetIdentitySchema,
+      nominalDiameterMm: z.number().positive(),
+    }),
+    lowerRoll: assetConfigSchema.extend({
+      assetId: z.string().regex(/^[A-Za-z0-9._-]{1,100}$/),
+      identity: assetIdentitySchema,
+      nominalDiameterMm: z.number().positive(),
+    }),
+  }).optional(),
 });
 
 const warehouseConfigSchema = assetConfigSchema;
@@ -99,6 +116,22 @@ const hrmSchema = z.object({
   }),
   recipes: z.array(recipeSchema).min(1),
   qualitySpecs: z.array(qualitySpecSchema).min(1),
+}).superRefine((config, context) => {
+  const cassette = config.productionLine.rollingStand.mobileCassette;
+  if (!cassette) return;
+  const assets = [...Object.values(config.productionLine), cassette, cassette.upperRoll, cassette.lowerRoll].filter(Boolean);
+  const ids = assets.map(asset => asset!.assetId);
+  const identities = assets.flatMap(asset => asset?.identity ? [JSON.stringify({
+    providerId: asset.identity.providerId.trim().toLowerCase(),
+    externalSystem: asset.identity.externalSystem.trim().toLowerCase(),
+    externalType: asset.identity.externalType.trim().toLowerCase(),
+    externalId: asset.identity.externalId.trim(),
+  })] : []);
+  if (new Set(ids).size !== ids.length || new Set(identities).size !== identities.length ||
+      cassette.storeAssetId === cassette.workshopAssetId || ids.includes(cassette.storeAssetId) || ids.includes(cassette.workshopAssetId)) {
+    context.addIssue({code: "custom", path: ["productionLine", "rollingStand", "mobileCassette"],
+      message: "Equipment identifiers, external identities and store/workshop locations must be distinct."});
+  }
 });
 
 // ─── Project Extras Schema ────────────────────────────────────────────────────

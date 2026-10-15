@@ -46,7 +46,9 @@ export class AssetIdentityPublicationProvider {
     private readonly refreshSkewMs = DEFAULT_REFRESH_SKEW_MS,
     private readonly now: () => number = Date.now,
   ) {
-    for (const asset of Object.values(productionLine)) {
+    const cassette = productionLine.rollingStand.mobileCassette;
+    const assets = [...Object.values(productionLine), ...(cassette ? [cassette, cassette.upperRoll, cassette.lowerRoll] : [])];
+    for (const asset of assets) {
       if (asset?.identity) {
         this.identities.set(asset.assetId, {
           identity: asset.identity,

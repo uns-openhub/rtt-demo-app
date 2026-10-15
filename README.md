@@ -404,3 +404,55 @@ register it. Identity-aware history also needs compatible controller/API readers
 and an archiver configured to persist identity enrichment. The offer metadata
 contains no identity proof or telemetry topic path. Stopping the demo disables
 its live business API; archived values can remain accessible independently.
+
+## Movable roll cassette and work rolls
+
+The standard profiles now include `hrm.productionLine.rollingStand.mobileCassette`.
+Existing custom configurations without this optional section keep their previous
+station behavior. The cassette starts in the rolling stand; an operator can move
+it to the roll store or roll workshop and return it without restarting the demo.
+This is a manual equipment-change scenario; it does not automatically shuttle
+equipment during production.
+
+The cassette is an Asset. Its upper and lower work rolls are separate subassets,
+each with its own external identifier and controller-issued publication evidence:
+
+```text
+forge-group/novasteel/hot-rolling/
+  hrm-stand-1/                  (or hrm-roll-store / hrm-roll-workshop)
+    roll-cassette-001/
+      equipment/main/{temperature,vibration,duration,status}
+      upper-work-roll-001/equipment/main/{temperature,vibration,duration,status,speed,diameter,wear}
+      lower-work-roll-001/equipment/main/{temperature,vibration,duration,status,speed,diameter,wear}
+```
+
+Housing/roll temperature, vibration and operating time follow rolling activity.
+Roll speed is derived from line speed and diameter. Illustrative wear increases
+with operating time; it is not an engineering wear prediction. Off-stand equipment
+cools toward ambient temperature and stops rotating. Moving never resets its
+external IDs, operating time, diameter or wear. Simulator restart resets this
+in-memory equipment model and creates a new run ID. The workshop does not yet
+simulate regrinding or replacement of an individual roll.
+
+Status GET includes `mobileCassette`. The authenticated service API accepts POST
+`roll-cassette` with `{location, expectedRevision, expectedRunId}` from that status.
+`location` is exactly `stand`, `store` or `workshop`; arbitrary destination paths
+and extra request fields are rejected. Occupied stands, stale state and prior-run
+commands are rejected. If the cassette is away, the next material waits at the
+descaling exit until it returns. A lost response must be reconciled through GET
+status before another move, rather than retried blindly.
+
+The companion Controller demo UI shows the cassette measurements, both work rolls,
+and location buttons. Its **Open asset in UNS** / **Open subasset** links lead to
+the normal Asset history entrypoints. Physical simulation state is distinct from
+the controller's verified identity placement: each of the three identities needs
+the normal reviewed provider association and scoped publication permission.
+Moves require the existing controller transition gate; they do not enable it.
+History follows verified bindings after their normal freshness/grace processing.
+Initial measurements before a binding is accepted can remain unattributed.
+
+All three leaves use a fixed `hrm_mobile_equipment` storage group, independent of
+location. The publisher drains queued messages before reconciling its produced
+topic inventory through Kit's `retainProducedTopics`, dropping only the old
+cassette subtree and preserving other station metadata. This does not clear MQTT
+values or delete UNS nodes, archived rows or identity history.

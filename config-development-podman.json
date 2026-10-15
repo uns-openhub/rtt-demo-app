@@ -44,7 +44,42 @@
         "nominalSpeedMps": 2.5,
         "maxMotorPowerKw": 3500,
         "maxForceKn": 18000,
-        "durationMinPerPass": 3
+        "durationMinPerPass": 3,
+        "mobileCassette": {
+          "assetId": "roll-cassette-001",
+          "description": "Movable rolling cassette",
+          "identity": {
+            "providerId": "demo.mes",
+            "externalSystem": "novasteel.mes",
+            "externalType": "equipment.code",
+            "externalId": "CASSETTE-001"
+          },
+          "initialLocation": "stand",
+          "storeAssetId": "hrm-roll-store",
+          "workshopAssetId": "hrm-roll-workshop",
+          "upperRoll": {
+            "assetId": "upper-work-roll-001",
+            "description": "Upper work roll",
+            "identity": {
+              "providerId": "demo.mes",
+              "externalSystem": "novasteel.mes",
+              "externalType": "equipment.code",
+              "externalId": "WORK-ROLL-UPPER-001"
+            },
+            "nominalDiameterMm": 600
+          },
+          "lowerRoll": {
+            "assetId": "lower-work-roll-001",
+            "description": "Lower work roll",
+            "identity": {
+              "providerId": "demo.mes",
+              "externalSystem": "novasteel.mes",
+              "externalType": "equipment.code",
+              "externalId": "WORK-ROLL-LOWER-001"
+            },
+            "nominalDiameterMm": 600
+          }
+        }
       },
       "warehouse": {
         "assetId": "hrm-warehouse",

@@ -212,6 +212,41 @@ export interface ProjectAppConfig {
                 maxMotorPowerKw: number;
                 maxForceKn: number;
                 durationMinPerPass: number;
+                mobileCassette?: {
+                    assetId: string;
+                    description: string;
+                    identity: {
+                        providerId: string;
+                        externalSystem: string;
+                        externalType: string;
+                        externalId: string;
+                    };
+                    initialLocation?: "stand" | "store" | "workshop";
+                    storeAssetId: string;
+                    workshopAssetId: string;
+                    upperRoll: {
+                        assetId: string;
+                        description: string;
+                        identity: {
+                            providerId: string;
+                            externalSystem: string;
+                            externalType: string;
+                            externalId: string;
+                        };
+                        nominalDiameterMm: number;
+                    };
+                    lowerRoll: {
+                        assetId: string;
+                        description: string;
+                        identity: {
+                            providerId: string;
+                            externalSystem: string;
+                            externalType: string;
+                            externalId: string;
+                        };
+                        nominalDiameterMm: number;
+                    };
+                } | undefined;
             };
             warehouse: {
                 assetId: string;

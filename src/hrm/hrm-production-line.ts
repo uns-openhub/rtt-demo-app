@@ -12,6 +12,7 @@ import { buildActiveFurnaceZones, tickFurnaceBatchPhysics, tickIdleFurnace } fro
 import { tickDescaling, tickIdleDescaling } from "./hrm-station-descaling.js";
 import { tickIdleRolling, tickRolling } from "./hrm-station-rolling.js";
 import { runQualityCheck } from "./hrm-station-warehouse.js";
+import { MobileRollCassette, type CassetteLocation } from "./mobile-roll-cassette.js";
 
 const DEFAULT_QUEUE_ASSET = {
   assetId: "hrm-queue",
@@ -20,6 +21,9 @@ const DEFAULT_QUEUE_ASSET = {
 const AMBIENT_TEMP_C = 20;
 
 export class HrmProductionLine {
+  private readonly mobileCassette: MobileRollCassette | undefined;
+  private mobilePublishFailures = 0;
+  private mobilePublishRetryAt = 0;
   private readonly config: HrmConfig;
   private readonly transports: IHrmTransport[];
   private readonly tickMs: number;
@@ -68,6 +72,8 @@ export class HrmProductionLine {
     this.applyFurnaceCounterValues(this.furnaceState);
     this.descalingState = tickIdleDescaling(undefined, this.config.productionLine.descaling, this.effectiveTickMs, this.descalingIdleStep);
     this.rollingState = tickIdleRolling(undefined, this.config.productionLine.rollingStand, this.effectiveTickMs, this.rollingIdleStep);
+    const cassette = config.productionLine.rollingStand.mobileCassette;
+    this.mobileCassette = cassette ? new MobileRollCassette(cassette, config.topicBase, config.productionLine.rollingStand.assetId) : undefined;
   }
 
   submitBatch(req: BatchSubmitRequest): BatchSubmitResponse {
@@ -140,6 +146,7 @@ export class HrmProductionLine {
     this.tickDescalingStation();
     this.tickRollingStation(step);
     this.tickWarehouseStation(step);
+    this.mobileCassette?.advance(this.effectiveTickMs, Boolean(this.rollingBatchId), this.rollingState);
 
     // Publish telemetry for all active batches
     this.publishTelemetry(step);
@@ -153,6 +160,7 @@ export class HrmProductionLine {
     const warehouseBatch = this.warehouseBatchId ? this.batches.get(this.warehouseBatchId) : undefined;
 
     return {
+      ...(this.mobileCassette ? {mobileCassette: this.mobileCassette.snapshot(Boolean(this.rollingBatchId))} : {}),
       timestamp: this.currentSimulationIso(),
       stations: {
         furnace: {
@@ -206,6 +214,36 @@ export class HrmProductionLine {
 
   getBatch(batchId: string): HrmBatch | undefined {
     return this.batches.get(batchId);
+  }
+
+  moveRollCassette(location: CassetteLocation, expectedRevision: number, expectedRunId: string) {
+    if (!this.mobileCassette) throw new Error("Movable roll equipment is not configured in this simulator.");
+    this.mobileCassette.move(location, expectedRevision, expectedRunId, Boolean(this.rollingBatchId));
+    this.publishMobileCassette(this.currentSimulationIso());
+    return this.mobileCassette.snapshot(Boolean(this.rollingBatchId));
+  }
+
+  private publishMobileCassette(time: string): void {
+    const equipment = this.mobileCassette;
+    if (!equipment || equipment.publicationState === "sending" || Date.now() < this.mobilePublishRetryAt) return;
+    const transports = this.transports.filter(t => t.publishMobileCassette);
+    if (!transports.length) return;
+    const snapshot = equipment.snapshot(Boolean(this.rollingBatchId));
+    equipment.publicationState = "sending";
+    // One bounded in-flight snapshot: slow proof/API calls never queue unbounded ticks.
+    void Promise.allSettled(transports.map(t => t.publishMobileCassette!(snapshot, time)))
+      .then(results => {
+        if (results.some(result => result.status === "rejected")) throw new Error("Publication failed");
+        equipment.publicationState = "sent";
+        this.mobilePublishFailures = 0;
+        this.mobilePublishRetryAt = 0;
+      })
+      .catch(() => {
+        equipment.publicationState = "failed";
+        if (!this.mobilePublishFailures) logger.warn("HRM: movable equipment telemetry unavailable; check identity source and service access.");
+        this.mobilePublishFailures++;
+        this.mobilePublishRetryAt = Date.now() + Math.min(60_000, 2000 * 2 ** Math.min(this.mobilePublishFailures, 5));
+      });
   }
 
   getRuntimeConfig(): HrmRuntimeConfigResponse {
@@ -386,8 +424,8 @@ export class HrmProductionLine {
     batch.ticksInStage++;
 
     if (done) {
-      logger.info(`HRM: Batch ${batch.batchId} DESCALING complete`);
-      if (!this.rollingBatchId) {
+      if (!this.rollingBatchId && (!this.mobileCassette || this.mobileCassette.installed)) {
+        logger.info(`HRM: Batch ${batch.batchId} DESCALING complete`);
         const exitedDescalingAt = this.currentSimulationIso();
         const durationMin = (batch.ticksInStage * this.effectiveTickMs) / 60_000;
         const descalingExitTempC = this.estimateDescalingExitTemp(batch, durationMin);
@@ -1098,6 +1136,8 @@ export class HrmProductionLine {
         ).catch((e) => logger.error(`HRM: rolling publish error: ${e}`));
       }
     }
+
+    this.publishMobileCassette(now);
 
     // Warehouse
     this.emitAssetMaterialOccupancy(
