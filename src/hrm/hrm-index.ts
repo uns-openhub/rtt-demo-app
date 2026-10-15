@@ -1,3 +1,4 @@
+import {ReviewedLifecycleRuntime} from './reviewed-lifecycle-runtime.js';
 import { logger } from "@uns-kit/core";
 import type UnsMqttProxy from "@uns-kit/core/uns-mqtt/uns-mqtt-proxy.js";
 import type { HrmConfig } from "./hrm-types.js";
@@ -18,7 +19,8 @@ export async function initHrm(
 
   const transport = new MqttHrmTransport(mqttOutput, telemetryIntervalMs, identityProvider);
 
-  const line = new HrmProductionLine(config, [transport]);
+  const lifecycle=config.reviewedLifecycle?await ReviewedLifecycleRuntime.open(config.reviewedLifecycle):undefined;
+  const line = new HrmProductionLine(config, [transport],lifecycle);
 
   let step = 0;
   setInterval(() => {

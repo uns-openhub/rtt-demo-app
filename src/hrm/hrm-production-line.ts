@@ -1,3 +1,4 @@
+import type {ReviewedLifecycleRuntime} from './reviewed-lifecycle-runtime.js';
 import { randomUUID } from "crypto";
 import { logger } from "@uns-kit/core";
 import type {
@@ -56,7 +57,7 @@ export class HrmProductionLine {
   private descalingIdleStep = 0;
   private rollingIdleStep = 0;
 
-  constructor(config: HrmConfig, transports: IHrmTransport[]) {
+  constructor(config: HrmConfig, transports: IHrmTransport[], private readonly reviewedLifecycle?:ReviewedLifecycleRuntime) {
     this.config = config;
     this.transports = transports;
     const tickMs = config.tickIntervalMs ?? 2000;
@@ -160,6 +161,7 @@ export class HrmProductionLine {
     const warehouseBatch = this.warehouseBatchId ? this.batches.get(this.warehouseBatchId) : undefined;
 
     return {
+      ...(this.reviewedLifecycle?{reviewedLifecycle:this.reviewedLifecycle.status()}:{}),
       ...(this.mobileCassette ? {mobileCassette: this.mobileCassette.snapshot(Boolean(this.rollingBatchId))} : {}),
       timestamp: this.currentSimulationIso(),
       stations: {
@@ -215,6 +217,12 @@ export class HrmProductionLine {
   getBatch(batchId: string): HrmBatch | undefined {
     return this.batches.get(batchId);
   }
+
+  executeReviewedAction(input:unknown){if(!this.reviewedLifecycle)throw Error('Reviewed lifecycle is not configured.');return this.reviewedLifecycle.execute(input,()=>!this.rollingBatchId);}
+  adoptReviewedLifecycle(input:unknown){if(!this.reviewedLifecycle)throw Error('Reviewed lifecycle is not configured.');return this.reviewedLifecycle.adopt(input,()=>!this.rollingBatchId);}
+  reviewedActionResult(operationId:string){if(!this.reviewedLifecycle)throw Error('Reviewed lifecycle is not configured.');return this.reviewedLifecycle.result(operationId);}
+  closeReviewedAdoption(input:unknown){if(!this.reviewedLifecycle)throw Error('Reviewed lifecycle is not configured.');return this.reviewedLifecycle.closeAdoption(input);}
+  get rollingPermitted(){return !this.rollingBatchId&&(!this.mobileCassette||this.mobileCassette.installed)&&(!this.reviewedLifecycle||this.reviewedLifecycle.rollingAllowed);}
 
   moveRollCassette(location: CassetteLocation, expectedRevision: number, expectedRunId: string) {
     if (!this.mobileCassette) throw new Error("Movable roll equipment is not configured in this simulator.");
@@ -424,7 +432,7 @@ export class HrmProductionLine {
     batch.ticksInStage++;
 
     if (done) {
-      if (!this.rollingBatchId && (!this.mobileCassette || this.mobileCassette.installed)) {
+      if (this.rollingPermitted) {
         logger.info(`HRM: Batch ${batch.batchId} DESCALING complete`);
         const exitedDescalingAt = this.currentSimulationIso();
         const durationMin = (batch.ticksInStage * this.effectiveTickMs) / 60_000;

@@ -163,7 +163,22 @@ const recipePostHandler: ApiHandler<"POST", AppApiContext> = async (event, { lin
   event.res.json(result.value);
 };
 
+const reviewedActionHandler:ApiHandler<'POST',AppApiContext>=async(event,{line})=>{
+ try{event.res.json(await line.executeReviewedAction(event.req.body));}catch{event.res.status(409).json({error:'Reviewed Action was rejected or its result is unknown. Refresh lifecycle status and retain the operation ID.'});}
+};
+const reviewedAdoptionHandler:ApiHandler<'POST',AppApiContext>=async(event,{line})=>{
+ try{event.res.json(await line.adoptReviewedLifecycle(event.req.body));}catch{event.res.status(409).json({error:'Reviewed successor adoption was rejected or its result is unknown. Refresh status and retain the operation ID.'});}
+};
+const reviewedResultHandler:ApiHandler<'GET',AppApiContext>=async(event,{line})=>{
+ const id=getQueryParam(event.req,'operationId');if(!id||!z.string().uuid().safeParse(id).success){event.res.status(400).json({error:'An operation ID is required.'});return;}
+ try{event.res.json({result:line.reviewedActionResult(id),lifecycle:line.getState().reviewedLifecycle});}catch{event.res.status(409).json({error:'Reviewed lifecycle is not configured.'});}
+};
+const reviewedClosureHandler:ApiHandler<'POST',AppApiContext>=async(event,{line})=>{try{event.res.json(await line.closeReviewedAdoption(event.req.body));}catch{event.res.status(409).json({error:'Closure was rejected or its outcome is unknown. Retain the saved request and check its original operation result.'});}};
 export const serviceApis = {
+  reviewedClosure:defineServiceApi({...hrmServiceRoute,attribute:'reviewed-lifecycle-close',method:'POST',description:'Durably close a pending adoption, preserving state and blocking late delivery',tags:['hrm'],handler:reviewedClosureHandler}),
+  reviewedAction:defineServiceApi({...hrmServiceRoute,attribute:'reviewed-lifecycle-action',method:'POST',description:'Execute an explicitly pinned reviewed demo state/Action contract',tags:['hrm'],handler:reviewedActionHandler}),
+  reviewedAdoption:defineServiceApi({...hrmServiceRoute,attribute:'reviewed-lifecycle-adopt',method:'POST',description:'Explicitly adopt the direct reviewed successor without resetting state',tags:['hrm'],handler:reviewedAdoptionHandler}),
+  reviewedResult:defineServiceApi({...hrmServiceRoute,attribute:'reviewed-lifecycle-result',method:'GET',description:'Recover a durable demo operation result without executing again',tags:['hrm'],handler:reviewedResultHandler}),
   moveRollCassette: defineServiceApi({
     ...hrmServiceRoute, attribute: "roll-cassette", method: "POST",
     description: "Move the simulated roll cassette and its two work rolls while the stand is empty",

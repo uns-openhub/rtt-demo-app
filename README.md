@@ -84,6 +84,15 @@ The development profiles use a 1s tick, 30x process speed, and full telemetry.
 Tune those values only in your untracked `config.json`; production deployments
 normally use an instance-specific controller configuration.
 
+## Optional reviewed execution contract
+
+From demo 6.1.19 with compatible Controller/UI 2.2.4, an instance can opt in to
+a reviewed State/Action contract, durable adoption receipts and explicit recovery
+or closure. Existing profiles keep this disabled. See the
+[technical configuration and recovery guide](docs/reviewed-lifecycle-runtime.md)
+for trusted file/digest provisioning, permissions and journal limits. This is a
+simulator feature, not physical-device or fleet control.
+
 ## Release
 
 `package.json` is the version source for this public OpenHub add-on. CI
