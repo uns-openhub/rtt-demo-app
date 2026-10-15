@@ -1,3 +1,4 @@
+import type {ReviewedLifecycleConfig,ReviewedLifecycleRuntime} from './reviewed-lifecycle-runtime.js';
 import type { MobileCassetteConfig, MobileCassetteSnapshot } from "./mobile-roll-cassette.js";
 // ─── Recipe & Config Types ────────────────────────────────────────────────────
 
@@ -95,6 +96,7 @@ export interface ProductionLineConfig {
 }
 
 export interface HrmConfig {
+  reviewedLifecycle?:ReviewedLifecycleConfig|undefined;
   topicBase: string;
   tickIntervalMs?: number;
   /**
@@ -321,6 +323,7 @@ export interface StationStatus {
 }
 
 export interface ProductionLineStateResponse {
+  reviewedLifecycle?:ReturnType<ReviewedLifecycleRuntime['status']>|undefined;
   mobileCassette?: MobileCassetteSnapshot | undefined;
   timestamp: string;
   stations: {

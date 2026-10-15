@@ -1973,6 +1973,34 @@
         "hrm": {
           "type": "object",
           "properties": {
+            "reviewedLifecycle": {
+              "type": "object",
+              "properties": {
+                "contractFile": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "contractDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                },
+                "stateFile": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "maintenanceState": {
+                  "default": "maintenance",
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "contractFile",
+                "contractDigest",
+                "stateFile"
+              ],
+              "additionalProperties": false
+            },
             "topicBase": {
               "type": "string",
               "minLength": 1

@@ -157,6 +157,12 @@ export interface ProjectAppConfig {
         project?: string | undefined;
     } | undefined;
     hrm?: {
+        reviewedLifecycle?: {
+            contractFile: string;
+            contractDigest: string;
+            stateFile: string;
+            maintenanceState?: string;
+        } | undefined;
         topicBase: string;
         tickIntervalMs?: number;
         simulationStartTime?: string | undefined;
