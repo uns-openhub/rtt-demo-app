@@ -9,6 +9,8 @@ import { UnsPacket } from "@uns-kit/core/uns/uns-packet.js";
 import { GeneratedAttributes, GeneratedObjectTypes } from "../uns/uns-dictionary.generated.js";
 import { GeneratedPhysicalMeasurements } from "../uns/uns-measurements.generated.js";
 import type { AssetIdentityPublicationProvider } from "./asset-identity-publication.js";
+import type { MobileCassetteSnapshot } from "./mobile-roll-cassette.js";
+import { buildUnsIdentityPath } from "@uns-kit/core/uns/uns-path.js";
 
 type InternalTableColumn = IUnsTableColumn & { name: string };
 
@@ -93,6 +95,7 @@ export interface AlarmEvent {
 }
 
 export interface IHrmTransport {
+  publishMobileCassette?(state: MobileCassetteSnapshot, time: string): Promise<void>;
   /** Continuous station telemetry — published on the configured telemetry cadence while a station is active. */
   publishMaterialStatus(
     assetId: string,
@@ -152,13 +155,71 @@ export interface IHrmTransport {
 // ─── MQTT Transport Implementation ───────────────────────────────────────────
 
 export class MqttHrmTransport implements IHrmTransport {
+  private readonly producedTopics = new Set<string>();
+  private mobileAssetPath: string | undefined;
   constructor(
     private readonly mqttOutput: UnsMqttProxy,
     private readonly telemetryIntervalMs: number,
     private readonly identityProvider?: AssetIdentityPublicationProvider,
   ) {}
 
+  async publishMobileCassette(state: MobileCassetteSnapshot, time: string): Promise<void> {
+    if (this.mobileAssetPath && this.mobileAssetPath !== state.cassette.assetPath) {
+      // Complete old queued publications before withdrawing their active inventory.
+      // Keep all other station topics; retirement never deletes UNS/history rows.
+      await this.mqttOutput.flush(5000);
+      const oldPrefix = `${this.mobileAssetPath}/`;
+      for (const topic of this.producedTopics) if (topic.startsWith(oldPrefix)) this.producedTopics.delete(topic);
+      this.mqttOutput.retainProducedTopics(this.producedTopics);
+    }
+    this.mobileAssetPath = state.cassette.assetPath;
+    if (state.location !== "stand") {
+      // The UNS receiver requires the base topic to exist. Register a location
+      // Asset before its nested cassette, just as the stand publishes itself.
+      const split = state.parentTopic.lastIndexOf("/");
+      await this.publishMqttMessage({
+        topic: state.parentTopic.slice(0, split), asset: state.parentTopic.slice(split + 1),
+        assetDescription: state.locationLabel, objectType: GeneratedObjectTypes["equipment"], objectId: "main",
+        attributes: [{attribute: "name", description: "Equipment location name", valueType: "string", validityMode: "static",
+          data: this.dataPayload(time, "hrm_mobile_equipment", {value: state.locationLabel})}],
+      });
+    }
+    // Each leaf owns its own proof for its complete path, including both parents.
+    // A parent's identity/proof must never be copied to either work roll.
+    for (const asset of [state.cassette, ...state.rolls]) {
+      if (!this.identityProvider) throw new Error("Movable equipment requires identity publication support.");
+      const topic = asset.assetPath.slice(0, -(asset.assetId.length + 1));
+      if (!await this.identityProvider.forAsset(asset.assetId, topic)) throw new Error("Movable equipment has no configured identity.");
+      const numeric = (attribute: string, description: string, value: number, uom: string) => ({
+        attribute, description, valueType: "number" as const,
+        ...this.intervalValidity(), data: this.dataPayload(time, "hrm_mobile_equipment", {value, uom}),
+      });
+      await this.publishMqttMessage({
+        topic, asset: asset.assetId, assetDescription: asset.description,
+        objectType: GeneratedObjectTypes["equipment"], objectId: "main",
+        attributes: [
+          numeric("temperature", "Simulated equipment temperature", asset.temperatureC, MEASUREMENT_UOM.celsius),
+          numeric("vibration", "Simulated equipment vibration", asset.vibrationMmS, MEASUREMENT_UOM.milimeterPerSecond),
+          {...numeric("duration", "Accumulated operating time since simulator start", asset.operatingSeconds, "s"), ...COUNTER_SIGNAL_METADATA},
+          {attribute: "status", description: "Current simulated equipment location", valueType: "string", ...this.intervalValidity(),
+            data: this.dataPayload(time, "hrm_mobile_equipment", {value: state.location})},
+          ...(asset.diameterMm === undefined ? [] : [
+            numeric("speed", "Simulated work roll rotational speed", asset.speedRpm, MEASUREMENT_UOM.revolutionsPerMinute),
+            numeric("diameter", "Simulated work roll diameter", asset.diameterMm, MEASUREMENT_UOM.milimeter),
+            numeric("wear", "Simulated accumulated work roll wear", asset.wearMm!, MEASUREMENT_UOM.milimeter),
+          ]),
+        ],
+      });
+    }
+  }
+
   private async publishMqttMessage(message: IMqttPublishRequest): Promise<void> {
+    // Track this transport's complete inventory before async proof/publication work,
+    // so concurrent station ticks cannot lose their metadata during a roll move.
+    const attributes = Array.isArray(message.attributes) ? message.attributes : [message.attributes];
+    for (const entry of attributes) this.producedTopics.add(buildUnsIdentityPath(
+      message.topic, message.asset, message.objectType ?? "", message.objectId ?? "main", entry.attribute,
+    ));
     const {
       assetStableEntityId: _stableEntityId,
       assetDisplayName: _displayName,

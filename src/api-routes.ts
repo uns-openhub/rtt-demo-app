@@ -10,6 +10,7 @@ import type { HrmProductionLine } from "./hrm/hrm-production-line.js";
 import { getBatchById, submitBatch } from "./hrm/services/batch-service.js";
 import { getRecipeById, getRecipes, updateRecipe } from "./hrm/services/recipe-service.js";
 import { getProductionLineState } from "./hrm/services/status-service.js";
+import { z } from "zod";
 
 export type AppApiContext = {
   line: HrmProductionLine;
@@ -75,6 +76,25 @@ const recipeUpdateSchema = defineDataCatalogSchema({
 
 const statusHandler: ApiHandler<"GET", AppApiContext> = async (event, { line }) => {
   event.res.json(getProductionLineState(line));
+};
+
+const cassetteMoveRequest = z.object({
+  location: z.enum(["stand", "store", "workshop"]),
+  expectedRevision: z.number().int().positive(),
+  expectedRunId: z.string().uuid(),
+}).strict();
+
+const cassetteMoveHandler: ApiHandler<"POST", AppApiContext> = async (event, {line}) => {
+  const parsed = cassetteMoveRequest.safeParse(event.req.body);
+  if (!parsed.success) {
+    event.res.status(400).json({error: "Choose stand, store or workshop and the current cassette revision and run ID."});
+    return;
+  }
+  try {
+    event.res.json(line.moveRollCassette(parsed.data.location, parsed.data.expectedRevision, parsed.data.expectedRunId));
+  } catch (error) {
+    event.res.status(409).json({error: (error as Error).message});
+  }
 };
 
 const configHandler: ApiHandler<"GET", AppApiContext> = async (event, { line }) => {
@@ -144,6 +164,20 @@ const recipePostHandler: ApiHandler<"POST", AppApiContext> = async (event, { lin
 };
 
 export const serviceApis = {
+  moveRollCassette: defineServiceApi({
+    ...hrmServiceRoute, attribute: "roll-cassette", method: "POST",
+    description: "Move the simulated roll cassette and its two work rolls while the stand is empty",
+    tags: ["hrm"],
+    requestBody: {required: true, contentType: "application/json", schemas: [defineDataCatalogSchema({
+      id: "hrm-roll-cassette-move", title: "Move roll cassette", contentType: "application/json",
+      fields: [
+        defineDataCatalogField("location", "string", "Destination: stand, store or workshop", {required: true}),
+        defineDataCatalogField("expectedRevision", "integer", "Current cassette revision from status", {required: true}),
+        defineDataCatalogField("expectedRunId", "string", "Simulator run ID from status", {required: true}),
+      ],
+    })]},
+    handler: cassetteMoveHandler,
+  }),
   status: defineServiceApi({
     ...hrmServiceRoute,
     attribute: "status",

@@ -1,3 +1,4 @@
+import type { MobileCassetteConfig, MobileCassetteSnapshot } from "./mobile-roll-cassette.js";
 // ─── Recipe & Config Types ────────────────────────────────────────────────────
 
 export interface FurnaceZoneSetpoint {
@@ -73,6 +74,7 @@ export interface DescalingConfig extends AssetConfig {
 }
 
 export interface RollingStandConfig extends AssetConfig {
+  mobileCassette?: MobileCassetteConfig | undefined;
   nominalSpeedMps: number;
   maxMotorPowerKw: number;
   maxForceKn: number;
@@ -319,6 +321,7 @@ export interface StationStatus {
 }
 
 export interface ProductionLineStateResponse {
+  mobileCassette?: MobileCassetteSnapshot | undefined;
   timestamp: string;
   stations: {
     furnace: StationStatus & { state: FurnacePhysicsState | undefined };
