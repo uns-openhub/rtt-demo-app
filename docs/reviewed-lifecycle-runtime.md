@@ -1,8 +1,9 @@
-# Reviewed lifecycle runtime — G2-07–09 development contract
+# Reviewed lifecycle runtime
 
-Local opt-in implementation; not yet released. Ordinary demo profiles omit this
-configuration and keep their existing behaviour. This is a technical runtime
-handoff guide, not a new end-user Help site.
+Optional protocol introduced in demo **6.1.19**, with Controller/UI **2.2.4**
+or a newer compatible build. Ordinary demo profiles omit this configuration and
+keep their existing behaviour. This technical runtime handoff guide complements
+the public operator instructions maintained on the UNS OpenHub website.
 
 ## Purpose and trust boundary
 
@@ -123,7 +124,7 @@ lost HTTP responses, an injected post-rename I/O error, contract adoption and
 corruption refusal. It does not certify a host power cut, disk loss, production
 rollout, MQTT end-to-end delivery or concurrent fleet execution.
 
-## G2-08 operator review and recovery (local development)
+## Operator review and recovery
 
 The Controller's `/demo/hot-rolling` operator screen renders an **Execution
 contract** panel when this optional runtime is configured. It shows accepted and
@@ -164,7 +165,7 @@ No new service identity, credential, scope or anonymous product endpoint is adde
 The UI does not install a contract file, run a State Action or roll out a fleet.
 The trusted file/digest preparation described above remains a separate step.
 
-## G2-09 — closing an unresolved attempt (local development)
+## Closing an unresolved attempt
 
 A healthy original executor advertises `closureSupported` and `closureAvailable`.
 The operator can choose **Review closing this attempt**, inspect fresh status and
