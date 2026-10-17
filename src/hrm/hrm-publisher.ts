@@ -110,6 +110,8 @@ export interface IHrmTransport {
     batch: HrmBatch | undefined,
     time: string): Promise<void>;
   publishFurnaceState(assetId: string, topicBase: string, batch: HrmBatch, time: string): Promise<void>;
+  /** Additional furnace materials share the equipment snapshot, but each has its own temperature. */
+  publishFurnaceMaterialState(assetId: string, topicBase: string, batch: HrmBatch, time: string): Promise<void>;
   publishIdleFurnaceState(assetId: string, topicBase: string, state: FurnacePhysicsState, time: string): Promise<void>;
   publishDescalingState(assetId: string, topicBase: string, batch: HrmBatch, time: string): Promise<void>;
   publishIdleDescalingState(assetId: string, topicBase: string, state: DescalingPhysicsState, time: string): Promise<void>;
@@ -485,11 +487,14 @@ export class MqttHrmTransport implements IHrmTransport {
   }
 
   async publishFurnaceState(assetId: string, topicBase: string, batch: HrmBatch, time: string): Promise<void> {
+    await this.publishFurnaceSnapshot(assetId, topicBase, batch.furnace!, time);
+    await this.publishFurnaceMaterialState(assetId, topicBase, batch, time);
+  }
+
+  async publishFurnaceMaterialState(assetId: string, topicBase: string, batch: HrmBatch, time: string): Promise<void> {
     const state = batch.furnace!;
     const dataGroup = this.resolveDataGroup(assetId, { dataGroup: "asset" });
     const virtualGroup = this.resolveVirtualGroup(assetId, { virtualGroup: "asset" });
-    await this.publishFurnaceSnapshot(assetId, topicBase, state, time);
-
     await this.publishMqttMessage({
       topic: topicBase,
       asset: assetId,

@@ -53,3 +53,49 @@ test('retains warehouse entry time and stage in EXITED before final status',()=>
   assert.ok(Date.parse(exit[5] as string)>Date.parse((exit[3] as HrmBatch).stageEnteredAt));
   assert.ok(['DONE','FAILED'].includes(line.getBatch(completed[0]!.batchId)!.stage));
 });
+
+test('samples every occupied furnace material and publishes shared equipment only once per tick',()=>{
+  const samples:Array<{method:PropertyKey;batch:HrmBatch;time:string}>=[];
+  const transport=new Proxy({}, {get:(_target,method)=>async(...args:unknown[])=>{
+    if(method==='publishFurnaceState'||method==='publishFurnaceMaterialState') {
+      samples.push({method,batch:args[2] as HrmBatch,time:args[3] as string});
+    }
+  }}) as IHrmTransport;
+  const line=new HrmProductionLine({...config,simulationStartTime:time},[transport]);
+  for(const materialId of ['overlap-a','overlap-b','overlap-c']) {
+    line.submitBatch({recipeId:config.recipes[0]!.id,materialId,quantity:1});
+  }
+  let overlappingTicks=0;
+  for(let tick=0;tick<300;tick++) {
+    const start=samples.length;
+    line.tick(tick);
+    const occupied=line.getState().stations.furnace.furnaceMaterials??[];
+    const current=samples.slice(start);
+    assert.deepEqual(current.map(s=>s.batch.materialId).sort(),occupied.map(m=>m.materialId).sort());
+    assert.equal(current.filter(s=>s.method==='publishFurnaceState').length,occupied.length?1:0);
+    for(const sample of current) {
+      assert.equal(sample.time,line.getState().timestamp);
+      assert.equal(sample.batch.furnace!.measuredMaterialTempC,
+        occupied.find(m=>m.materialId===sample.batch.materialId)!.measuredMaterialTempC);
+    }
+    if(occupied.length>1) overlappingTicks++;
+  }
+  assert.ok(overlappingTicks>5,'exercise concurrent furnace occupancy');
+  const first=samples[0]!;
+  assert.equal(first.batch.stage,'FURNACE','a later tick must not mutate a queued sample');
+  assert.notEqual(first.batch,line.getBatch(first.batch.batchId));
+});
+
+test('additional material telemetry retains the material path and does not repeat equipment',async()=>{
+  const {transport,packets}=capture();
+  const b=batch();b.stage='FURNACE';b.materialId='overlap-b';
+  b.furnace={measuredMaterialTempC:725.5} as NonNullable<HrmBatch['furnace']>;
+  await transport.publishFurnaceMaterialState('hrm-furnace',config.topicBase,b,time);
+  assert.equal(packets.length,1);
+  const packet=packets[0];
+  assert.equal(packet.objectType,'material');assert.equal(packet.objectId,'overlap-b');
+  assert.equal(packet.attributes.length,1);assert.equal(packet.attributes[0].attribute,'temperature');
+  assert.equal(packet.attributes[0].data.value,725.5);
+  assert.equal(packet.attributes[0].data.time,time);
+  assert.equal(packet.attributes[0].data.batchDataGroup,'batch');
+});

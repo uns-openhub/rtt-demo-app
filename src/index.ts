@@ -2,10 +2,11 @@ import {
   ConfigFile,
   ServiceTokenProvider,
   UnsClient,
-  UnsProxyProcess,
   logger,
 } from "@uns-kit/core";
 import UnsMqttProxy from "@uns-kit/core/uns-mqtt/uns-mqtt-proxy.js";
+import type { MqttChannelConfig } from "@uns-kit/core/uns-config/mqtt-channel.js";
+import { createDemoMqttRuntime } from "./mqtt-runtime.js";
 import { registerAttributeDescriptions, registerObjectTypeDescriptions } from "@uns-kit/core/uns/uns-dictionary-registry.js";
 import "@uns-kit/api";
 import { registerApiCatalog, type UnsProxyProcessWithApi } from "@uns-kit/api";
@@ -27,17 +28,16 @@ async function main() {
   registerObjectTypeDescriptions(GeneratedObjectTypeDescriptions);
   registerAttributeDescriptions(GeneratedAttributeDescriptions);
 
-  const unsProxyProcess = new UnsProxyProcess(config.infra.host!, {
+  // Generated config types allow explicit undefined; the SDK resolver omits those fields.
+  const { process: mqttProcess, mqttOutput } = await createDemoMqttRuntime({
+    infra: config.infra as MqttChannelConfig,
+    ...(config.output ? { output: config.output as MqttChannelConfig } : {}),
     processName: config.uns.processName!,
-  }) as UnsProxyProcessWithApi;
-
-  const mqttOutput = await unsProxyProcess.createUnsMqttProxy(
-    config.output?.host ?? config.infra.host!,
-    resolveAssetIdentityMqttInstanceName("templateUnsRttOutput"),
-    config.uns.instanceMode!,
-    config.uns.handover!,
-    { publishThrottlingDelay: 0 }
-  );
+    instanceName: resolveAssetIdentityMqttInstanceName("templateUnsRttOutput"),
+    instanceMode: config.uns.instanceMode!,
+    handover: config.uns.handover!,
+  });
+  const unsProxyProcess = mqttProcess as UnsProxyProcessWithApi;
 
   if (!config.uns?.jwksWellKnownUrl) {
     throw new Error("uns.jwksWellKnownUrl is required for API authentication");
