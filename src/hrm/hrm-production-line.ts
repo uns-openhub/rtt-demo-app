@@ -1043,23 +1043,26 @@ export class HrmProductionLine {
     if (furnaceLeadBatchId) {
       for (const batchId of this.furnaceSlotBatchIds) {
         if (!batchId) continue;
-        const batch = this.batches.get(batchId)!;
+        // Snapshot before asynchronous publication so later ticks cannot change this sample.
+        const batch = structuredClone(this.batches.get(batchId)!);
         this.emitMaterialStatus(
           this.config.productionLine.furnace.assetId,
           this.config.productionLine.furnace.description,
           batch,
           now,
         );
-      }
-      const batch = this.batches.get(furnaceLeadBatchId)!;
-      if (batch.furnace) {
-        for (const transport of this.transports) {
-          transport.publishFurnaceState(
-            this.config.productionLine.furnace.assetId,
-            this.config.topicBase,
-            batch,
-            now,
-          ).catch((e) => logger.error(`HRM: furnace publish error: ${e}`));
+        if (batch.furnace) {
+          for (const transport of this.transports) {
+            const publish = batchId === furnaceLeadBatchId
+              ? transport.publishFurnaceState.bind(transport)
+              : transport.publishFurnaceMaterialState.bind(transport);
+            publish(
+              this.config.productionLine.furnace.assetId,
+              this.config.topicBase,
+              batch,
+              now,
+            ).catch((e) => logger.error(`HRM: furnace publish error: ${e}`));
+          }
         }
       }
     } else if (this.furnaceState) {
