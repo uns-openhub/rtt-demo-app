@@ -91,6 +91,20 @@ export class HrmProductionLine {
       };
     }
 
+    const existingMaterial = Array.from(this.batches.values())
+      .find((batch) => batch.materialId === req.materialId);
+    if (existingMaterial) {
+      return {
+        batchId: "",
+        recipeId: req.recipeId,
+        materialId: req.materialId,
+        quantity: req.quantity,
+        status: "rejected",
+        reason: `Material '${req.materialId}' already belongs to batch '${existingMaterial.batchId}' in this simulation run`,
+        submittedAt: this.currentSimulationIso(),
+      };
+    }
+
     const batchId = randomUUID();
     const now = this.currentSimulationIso();
     const batch: HrmBatch = {

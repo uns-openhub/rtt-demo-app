@@ -314,6 +314,7 @@ curl -s -X POST "http://localhost:3200/api/system/hrm/service/rtt-demo-app/recip
   `WAREHOUSE` stage. Only then does the runtime batch become `DONE`/`FAILED`,
   preserving the actual visit interval for archived traces.
 - API/status payloads still expose the business `materialId` (`slab-001`) so external submit/query workflows do not need to know the UNS stage suffix.
+- A `materialId` identifies one material and must remain unique within retained demo history. The runtime rejects a duplicate within the current simulation process; after restarting the process, submit fresh material IDs or clear the previous demo dataset before reusing them.
 - `dataGroup` is storage/table routing metadata. In this demo it separates raw data by aggregate asset (`hrm_pusher_furnace`, `hrm_descaling`, `hrm_stand_1`, `hrm_warehouse`) and by dynamic sibling groups such as `batch` and `pass`; it is not used to model sub-asset hierarchy.
 - Sub-assets should be modeled by putting the full parent asset path in `topic`
   and the leaf sub-asset name in `asset`. For example, a separate service that
