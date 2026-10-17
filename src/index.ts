@@ -1,3 +1,4 @@
+import { registerManagementApiCatalog as registerApiCatalog } from './management-api-catalog.js';
 import {
   ConfigFile,
   ServiceTokenProvider,
@@ -9,7 +10,7 @@ import type { MqttChannelConfig } from "@uns-kit/core/uns-config/mqtt-channel.js
 import { createDemoMqttRuntime } from "./mqtt-runtime.js";
 import { registerAttributeDescriptions, registerObjectTypeDescriptions } from "@uns-kit/core/uns/uns-dictionary-registry.js";
 import "@uns-kit/api";
-import { registerApiCatalog, type UnsProxyProcessWithApi } from "@uns-kit/api";
+import { type UnsProxyProcessWithApi } from "@uns-kit/api";
 import {
   GeneratedAttributeDescriptions,
   GeneratedObjectTypeDescriptions,

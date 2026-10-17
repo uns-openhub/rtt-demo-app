@@ -1,6 +1,6 @@
 {
   "name": "rtt-demo-app",
-  "version": "6.1.20",
+  "version": "6.1.21",
   "private": true,
   "description": "OpenHub RTT demo add-on with a hot rolling mill MQTT simulator and API",
   "license": "MIT",
@@ -35,7 +35,7 @@
     "typecheck": "tsc --noEmit",
     "build": "pnpm run clean && tsc -p tsconfig.json",
     "test": "tsx --test test/*.test.ts",
-    "verify": "pnpm run test && pnpm run typecheck && pnpm run build",
+    "verify": "pnpm run test && pnpm run typecheck && pnpm run build && node --test test/management-api-catalog.test.mjs",
     "dev": "node --env-file=.env ./node_modules/tsx/dist/cli.mjs watch src/index.ts",
     "start": "node --env-file-if-exists=.env dist/index.js",
     "hrm:submit": "node --env-file-if-exists=.env ./node_modules/tsx/dist/cli.mjs scripts/hrm-submit.ts",
