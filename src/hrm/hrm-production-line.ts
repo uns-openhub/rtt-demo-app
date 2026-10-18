@@ -6,7 +6,7 @@ import type {
   BatchSubmitRequest, BatchSubmitResponse,
   ProductionLineStateResponse, FurnacePhysicsState,
   DescalingPhysicsState, RollingPhysicsState, WarehousePhysicsState,
-  HrmRuntimeConfigResponse, HrmRepeatStage,
+  HrmRuntimeConfigResponse, HrmRepeatStage, MaterialSplitRequest, MaterialSplitResult,
 } from "./hrm-types.js";
 import type { AlarmEvent, IHrmTransport } from "./hrm-publisher.js";
 import { buildActiveFurnaceZones, tickFurnaceBatchPhysics, tickIdleFurnace } from "./hrm-station-furnace.js";
@@ -39,6 +39,7 @@ export class HrmProductionLine {
   private furnaceState: FurnacePhysicsState | undefined;
   private descalingState: DescalingPhysicsState | undefined;
   private rollingState: RollingPhysicsState | undefined;
+  private readonly pendingSplitOutputs: string[] = [];
   private readonly pendingMerges = new Map<string, { outputMaterialId: string; inputMaterialIds: string[]; batchIds: string[] }>();
   private readonly furnaceSlotBatchIds: Array<string | undefined> = Array.from({ length: 5 }, () => undefined);
   private furnacePaceElapsedMin = 0;
@@ -150,6 +151,40 @@ export class HrmProductionLine {
         ? { mergeOutputMaterialId: req.mergeOutputMaterialId, mergeInputMaterialIds: [...req.mergeInputMaterialIds] }
         : {}),
     };
+  }
+
+  splitMaterial(req: MaterialSplitRequest): MaterialSplitResult {
+    if (!req || !/^[A-Za-z0-9._-]{1,100}$/.test(req.requestId ?? '') ||
+        typeof req.sourceBatchId !== 'string' || !Array.isArray(req.outputMaterialIds) || req.outputMaterialIds.length !== 2 ||
+        req.outputMaterialIds.some(id => typeof id !== 'string' || !/^[A-Za-z0-9._-]{1,80}$/.test(id)) ||
+        new Set(req.outputMaterialIds).size !== 2) {
+      return {ok: false, statusCode: 400, error: 'Provide a requestId, sourceBatchId and two distinct material identifiers (up to 80 letters, numbers, dot, underscore or hyphen).'};
+    }
+    const source = this.batches.get(req.sourceBatchId);
+    if (!source) return {ok: false, statusCode: 404, error: 'Source batch is not present in this simulator run. Refresh its state.'};
+    if (source.splitReceipt) {
+      if (source.splitReceipt.requestId === req.requestId && JSON.stringify(source.splitReceipt.outputMaterialIds) === JSON.stringify(req.outputMaterialIds))
+        return {ok: true, value: structuredClone(source.splitReceipt)};
+      return {ok: false, statusCode: 409, error: 'This material has already been split. Open its recorded outputs.'};
+    }
+    if (!['DONE', 'FAILED'].includes(source.stage) || source.mergeConsumedAt || !source.warehouse)
+      return {ok: false, statusCode: 409, error: 'Only a completed material not consumed by another operation can be split.'};
+    if ([...this.batches.values()].some(b => req.outputMaterialIds.includes(b.materialId)))
+      return {ok: false, statusCode: 409, error: 'An output identifier already exists. Choose two new identifiers.'};
+    if ([...this.batches.values()].some(b => b.splitReceipt?.requestId === req.requestId))
+      return {ok: false, statusCode: 409, error: 'This request identifier belongs to another split.'};
+    const now = this.currentSimulationIso();
+    const outputs = req.outputMaterialIds.map(materialId => ({batchId: randomUUID(), materialId, quantity: source.quantity / 2}));
+    source.splitReceipt = {sourceBatchId: source.batchId, sourceMaterialId: source.materialId,
+      requestId: req.requestId, outputMaterialIds: [...req.outputMaterialIds], splitAt: now, outputs};
+    for (const output of outputs) {
+      const child: HrmBatch = { ...output, recipeId: source.recipeId, stage: 'WAREHOUSE', createdAt: now,
+        stageEnteredAt: now, ticksInStage: 0, recipe: this.cloneRecipe(source.recipe), measured: structuredClone(source.measured),
+        warehouse: structuredClone(source.warehouse), splitSourceBatchId: source.batchId, splitSourceMaterialId: source.materialId,
+        traceStartedAt: source.traceStartedAt ?? source.createdAt, previousMaterialObjectIds: [`${source.materialId}-3`]};
+      this.batches.set(child.batchId, child); this.pendingSplitOutputs.push(child.batchId);
+    }
+    return {ok: true, value: structuredClone(source.splitReceipt)};
   }
 
   tick(step: number): void {
@@ -765,6 +800,10 @@ export class HrmProductionLine {
   }
 
   private tickWarehouseStation(step: number): void {
+    if (!this.warehouseBatchId) {
+      const next = this.pendingSplitOutputs.shift();
+      if (next) this.enterWarehouse(this.batches.get(next)!, this.currentSimulationIso(), step);
+    }
     if (!this.warehouseBatchId) return;
     const batch = this.batches.get(this.warehouseBatchId)!;
 

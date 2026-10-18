@@ -282,6 +282,11 @@ export interface HrmBatch {
   mergeOutputMaterialId?: string;
   previousMaterialObjectIds?: string[];
   mergeConsumedAt?: string;
+  splitSourceBatchId?: string;
+  splitSourceMaterialId?: string;
+  /** Original production start retained for tracing inherited measurements. */
+  traceStartedAt?: string;
+  splitReceipt?: MaterialSplitReceipt;
 }
 
 // ─── API Request / Response ───────────────────────────────────────────────────
@@ -347,3 +352,16 @@ export interface HrmRuntimeConfigResponse {
   telemetryIntervalMs: number;
   effectiveTickMs: number;
 }
+
+export interface MaterialSplitRequest {
+  sourceBatchId: string;
+  requestId: string;
+  outputMaterialIds: [string, string];
+}
+export interface MaterialSplitReceipt extends MaterialSplitRequest {
+  sourceMaterialId: string;
+  splitAt: string;
+  outputs: Array<{batchId: string; materialId: string; quantity: number}>;
+}
+export type MaterialSplitResult = {ok: true; value: MaterialSplitReceipt}
+  | {ok: false; statusCode: 400 | 404 | 409; error: string};

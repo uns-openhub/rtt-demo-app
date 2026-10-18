@@ -6,6 +6,7 @@ import {
   type ApiHandler,
   type ServiceApiRegistration,
 } from "@uns-kit/api";
+import type { MaterialSplitRequest } from "./hrm/hrm-types.js";
 import type { HrmProductionLine } from "./hrm/hrm-production-line.js";
 import { getBatchById, submitBatch } from "./hrm/services/batch-service.js";
 import { getRecipeById, getRecipes, updateRecipe } from "./hrm/services/recipe-service.js";
@@ -50,6 +51,15 @@ const batchSubmitSchema = defineDataCatalogSchema({
       required: true,
       example: 1,
     }),
+  ],
+});
+
+const materialSplitSchema = defineDataCatalogSchema({
+  id: 'hrm-material-split-request', title: 'Split completed material', contentType: 'application/json',
+  fields: [
+    defineDataCatalogField('sourceBatchId', 'string', 'Completed source batch UUID', {required: true}),
+    defineDataCatalogField('requestId', 'string', 'Unique command ID; reuse only for the identical request within this simulator run', {required: true}),
+    defineDataCatalogField('outputMaterialIds', 'array', 'Exactly two distinct, unused material identifiers; each receives half the source quantity', {required: true}),
   ],
 });
 
@@ -174,6 +184,12 @@ const reviewedResultHandler:ApiHandler<'GET',AppApiContext>=async(event,{line})=
  try{event.res.json({result:line.reviewedActionResult(id),lifecycle:line.getState().reviewedLifecycle});}catch{event.res.status(409).json({error:'Reviewed lifecycle is not configured.'});}
 };
 const reviewedClosureHandler:ApiHandler<'POST',AppApiContext>=async(event,{line})=>{try{event.res.json(await line.closeReviewedAdoption(event.req.body));}catch{event.res.status(409).json({error:'Closure was rejected or its outcome is unknown. Retain the saved request and check its original operation result.'});}};
+const splitMaterialHandler: ApiHandler<'POST', AppApiContext> = async (event, {line}) => {
+  const result = line.splitMaterial(event.req.body as MaterialSplitRequest);
+  if (!result.ok) { event.res.status(result.statusCode).json({error: result.error}); return; }
+  event.res.json(result.value);
+};
+
 export const serviceApis = {
   reviewedClosure:defineServiceApi({...hrmServiceRoute,attribute:'reviewed-lifecycle-close',method:'POST',description:'Durably close a pending adoption, preserving state and blocking late delivery',tags:['hrm'],handler:reviewedClosureHandler}),
   reviewedAction:defineServiceApi({...hrmServiceRoute,attribute:'reviewed-lifecycle-action',method:'POST',description:'Execute an explicitly pinned reviewed demo state/Action contract',tags:['hrm'],handler:reviewedActionHandler}),
@@ -235,6 +251,13 @@ export const serviceApis = {
       schemas: [batchSubmitSchema],
     },
     handler: batchPostHandler,
+  }),
+  splitMaterial: defineServiceApi({
+    ...hrmServiceRoute, attribute: 'material-split', method: 'POST',
+    description: 'Split one completed material into two new warehouse outputs; repeat the same requestId for a known result within this simulator run.',
+    tags: ['hrm'],
+    requestBody: {required: true, contentType: 'application/json', description: 'Split a completed source without repeating production', schemas: [materialSplitSchema]},
+    handler: splitMaterialHandler,
   }),
   recipes: defineServiceApi({
     ...hrmServiceRoute,

@@ -19,9 +19,9 @@ function capture() {
 }
 test('publishes the complete merge predecessor list as one valid scalar wire packet',async()=>{
   const {transport,attributes}=capture();await transport.publishWarehouseState('hrm-warehouse',config.topicBase,batch(),time);
-  const evidence=attributes().filter(a=>a.attribute==='previous-materials');assert.equal(evidence.length,1);
+  const evidence=attributes().filter(a=>a.attribute==='merge-from-materials');assert.equal(evidence.length,1);
   assert.deepEqual(JSON.parse(evidence[0].data.value),['input-a-2','input-b-2']);
-  assert.equal(evidence[0].relationshipEvidence.sourceObjectIdFrom,'value[]');assert.equal(evidence[0].relationshipEvidence.defaultStatus,'suggested');
+  assert.equal(evidence[0].relationshipEvidence.relationshipKey,'material-merge');assert.equal(evidence[0].relationshipEvidence.sourceObjectIdFrom,'value[]');assert.equal(evidence[0].relationshipEvidence.defaultStatus,'suggested');
   UnsPacket.validateMessageComponents(evidence[0].data,undefined);
 });
 test('keeps a single predecessor scalar and backwards compatible',async()=>{
@@ -98,4 +98,20 @@ test('additional material telemetry retains the material path and does not repea
   assert.equal(packet.attributes[0].data.value,725.5);
   assert.equal(packet.attributes[0].data.time,time);
   assert.equal(packet.attributes[0].data.batchDataGroup,'batch');
+});
+
+test('split packets declare the source batch and label inherited inspection',async()=>{
+  const {transport,attributes}=capture();const child=batch();
+  child.splitSourceBatchId='parent-batch';child.splitSourceMaterialId='parent';child.previousMaterialObjectIds=['parent-3'];
+  await transport.publishWarehouseState('hrm-warehouse',config.topicBase,child,time);
+  await transport.publishMaterialTransition('hrm-warehouse','Warehouse',config.topicBase,child,'ENTERED',time,null);
+  assert.equal(attributes().find(a=>a.attribute==='split-from-material').data.value,'parent-3');
+  assert.equal(attributes().find(a=>a.attribute==='split-from-material').relationshipEvidence.relationshipKey,'material-split');
+  const tables=attributes().filter(a=>a.table);
+  for(const table of tables){
+    assert.equal(table.table.columns.splitSourceBatchId.value,'parent-batch');
+    assert.equal(table.table.columns.splitSourceMaterialId.value,'parent');
+    assert.equal(table.table.columns.measurementOrigin.value,'inherited');
+    UnsPacket.validateMessageComponents(undefined,table.table);
+  }
 });
