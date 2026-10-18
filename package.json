@@ -1,6 +1,6 @@
 {
   "name": "rtt-demo-app",
-  "version": "6.1.22",
+  "version": "6.1.23",
   "private": true,
   "description": "OpenHub RTT demo add-on with a hot rolling mill MQTT simulator and API",
   "license": "MIT",
@@ -15,7 +15,7 @@
   "unsDatahub": {
     "schemaVersion": 1,
     "kind": "addon",
-    "controllerCompatibility": ">=2 <3"
+    "controllerCompatibility": ">=2.2.13 <3"
   },
   "type": "module",
   "engines": {

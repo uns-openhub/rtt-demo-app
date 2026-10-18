@@ -96,8 +96,8 @@ simulator feature, not physical-device or fleet control.
 ## Release
 
 `package.json` is the version source for this public OpenHub add-on. CI
-validates source changes; after a versioned merge, create the matching `vX.Y.Z`
-tag and GitHub Release through the repository's separate release procedure.
+validates source changes. After a versioned merge, `tag-from-package.yml` creates
+the matching `vX.Y.Z` tag and GitHub Release; do not create or move it manually.
 The controller's public catalog in `releases` mode intentionally reads GitHub
 Releases rather than bare tags.
 
@@ -504,3 +504,59 @@ Material split/merge evidence requires the reviewed `manufacturing.material-trac
 - All new transformation evidence is suggested. In UNS tree, open the material's Object ID menu → Details and review its relationships. An ambiguous identity requires choosing the concrete source path before accepting; a rejected suggestion does not select a path.
 
 The original source batch and inherited inspection provenance remain attached to split outputs. Old evidence is not automatically converted to a different relationship contract or approved in bulk. The simulator's split receipt still belongs to one in-memory run; after an unknown result, inspect the existing receipt rather than issuing a new command.
+
+## Complete transformation manifests (6.1.23)
+
+From demo **6.1.23**, actual split/merge evidence carries a complete declaration.
+Upgrade **every Controller writer to 2.2.13 or newer in the 2.x line before
+starting this demo**. The package manifest and signed catalog enforce this minimum;
+older Controllers cannot decode `uns.relationship-operation.v1`. Apply the normal
+Controller schema migrations first. Existing measurement values and topic paths
+are unchanged. For reliable recovery when the latest-value cache is cold, use
+**UNS API Global 4.1.19 or newer**. Archiver **5.2.23** was used for the installed
+MQTT/archive/history acceptance; this release requires no archiver schema change.
+
+The scalar evidence value carries a JSON string with this structure:
+
+```json
+{
+  "format": "uns.relationship-operation.v1",
+  "manifest": {
+    "version": 1,
+    "operationId": "d02cb541-39c3-4a88-bcf2-5e75dd4be817",
+    "kind": "split",
+    "occurredAt": "2026-10-18T12:00:00.000Z",
+    "inputs": [{"objectType":"material","objectId":"slab-3","fullTopic":"example/warehouse/material/slab-3/"}],
+    "outputs": [
+      {"objectType":"material","objectId":"piece-a-3","fullTopic":"example/warehouse/material/piece-a-3/"},
+      {"objectType":"material","objectId":"piece-b-3","fullTopic":"example/warehouse/material/piece-b-3/"}
+    ]
+  },
+  "value": "slab-3"
+}
+```
+
+Every split output repeats the **same** immutable manifest and operation UUID.
+A merge declares all rolling-stand inputs and its warehouse output; its `value`
+is the existing JSON-encoded predecessor list. The outer scalar wire format
+lets latest-value caches and archives retain the declaration without special
+columns. Endpoint lists are bounded to 32 distinct concrete material identities;
+unknown fields require another protocol version. No quantity-conservation or
+physical execution guarantee is inferred from this declaration.
+
+Controller review remains blocked until every expected link resolves and matches
+the declaration. Missing events stay pending, even after restart; identical
+replays preserve reviewed evidence. Conflicting content with the same UUID is
+blocked for operator investigation. Old evidence without a manifest remains
+readable and individually reviewable, but cannot prove a complete operation.
+
+Simulator batches, split request replay and generated UUIDs remain scoped to the
+current simulator run. Durable simulator commands across restarts are separate
+work; this manifest does not make the simulator a durable production executor.
+
+
+Operator guide: [review a complete split or merge](https://www.uns-openhub.com/docs/guides/demo/materials-and-trace/).
+Upgrade the readers first; if reverting a Controller below 2.2.13, stop this
+manifest-emitting producer beforehand. Stopping it does not convert archived
+manifest values back to older scalar evidence. Reviewed legacy conversion is a
+separate operation; do not overwrite history to force compatibility.
