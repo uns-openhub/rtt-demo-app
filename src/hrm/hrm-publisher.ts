@@ -276,17 +276,19 @@ export class MqttHrmTransport implements IHrmTransport {
         ? [this.previousMaterialObjectId(batch)!]
         : [];
     const ids = [...new Set(previousMaterialIds)];
+    const transformation = batch.splitSourceBatchId ? "split" : ids.length > 1 ? "merge" : "renumbering";
     const value = ids.length > 1 ? JSON.stringify(ids) : ids[0];
     if (!value) return undefined;
 
     return {
-      attribute: ids.length > 1 ? GeneratedAttributes["previous-materials"] : GeneratedAttributes["previous-material"],
-      description: previousMaterialIds.length <= 1
-        ? "Prejšnja oznaka materiala pred prehodom na trenutno lokacijo"
-        : "Prejšnje oznake materiala pred združitvijo v trenutno oznako",
+      attribute: transformation === "split" ? "split-from-material" : transformation === "merge" ? "merge-from-materials" : GeneratedAttributes["previous-material"],
+      description: transformation === "split" ? "Source material before this split output"
+        : transformation === "merge" ? "Source materials combined into this output"
+        : "Prejšnja oznaka materiala pred prehodom na trenutno lokacijo",
       systemRole: "relationship-evidence" as const,
       relationshipEvidence: {
-        relationshipKey: "material-renumbering",
+        relationshipKey: `material-${transformation}`,
+        relationshipReviewPolicy: "suggest" as const,
         ownerEndpoint: "target" as const,
         valueEndpoint: "source" as const,
         sourceObjectType: GeneratedObjectTypes["material"],
@@ -992,6 +994,11 @@ export class MqttHrmTransport implements IHrmTransport {
               { name: "batchId",              type: "symbol", value: batch.batchId },
               { name: "materialId",           type: "symbol", value: batch.materialId },
               { name: "recipeId",             type: "symbol", value: batch.recipeId },
+              ...(batch.splitSourceBatchId ? [
+                {name: 'measurementOrigin', type: 'symbol' as const, value: 'inherited'},
+                {name: 'splitSourceBatchId', type: 'symbol' as const, value: batch.splitSourceBatchId},
+                {name: 'splitSourceMaterialId', type: 'symbol' as const, value: batch.splitSourceMaterialId ?? ''},
+              ] : []),
               { name: "specId",               type: "symbol", value: state.specId },
               { name: "inspectionStatus",     type: "symbol", value: state.passFail ? "PASSED" : "FAILED" },
               { name: "finalThicknessMm",     type: "double", value: state.finalThicknessMm, uom: MEASUREMENT_UOM.milimeter },
@@ -1037,6 +1044,11 @@ export class MqttHrmTransport implements IHrmTransport {
     ];
     if (batch.repeatStage) {
       columns.push({ name: "repeatStage", type: "symbol", value: batch.repeatStage });
+    }
+    if (batch.splitSourceBatchId) {
+      columns.push({name: 'splitSourceBatchId', type: 'symbol', value: batch.splitSourceBatchId},
+        {name: 'splitSourceMaterialId', type: 'symbol', value: batch.splitSourceMaterialId ?? ''},
+        {name: 'measurementOrigin', type: 'symbol', value: 'inherited'});
     }
     if (batch.mergeInputMaterialIds?.length) {
       columns.push({ name: "mergeInputMaterialIds", type: "string", value: batch.mergeInputMaterialIds.join(",") });

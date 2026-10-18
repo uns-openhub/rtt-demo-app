@@ -466,3 +466,41 @@ location. The publisher drains queued messages before reconciling its produced
 topic inventory through Kit's `retainProducedTopics`, dropping only the old
 cassette subtree and preserving other station metadata. This does not clear MQTT
 values or delete UNS nodes, archived rows or identity history.
+
+
+### Split an existing completed material (6.1.22)
+
+In the OpenHub demo, open a completed material under **Material details**, expand
+**Split material**, and supply two new identifiers. This is different from
+**Pieces**, which queues independent furnace inputs. The source is consumed once;
+two new batch IDs each receive half its quantity. Outputs enter the warehouse,
+inherit source process measurements and quality inspection, and publish their own
+entry/exit events with `splitSourceBatchId`, `splitSourceMaterialId`, and
+`measurementOrigin=inherited`. No new furnace/rolling measurement is implied.
+
+The registered POST service is `/api/system/hrm/service/rtt-demo-app/material-split`.
+Its body contains `sourceBatchId`, `requestId`, and exactly two `outputMaterialIds`.
+An identical request in the same simulator run returns the same receipt. Changed
+requests against a consumed source return409; invalid IDs return400 and an absent
+source404. Batches and receipts remain in memory: restart is not durable command
+recovery. An uncertain UI result blocks another split until its source receipt is
+read back. Recorded MQTT history remains independent of the command receipt.
+
+Trace each output to inspect its own visit and the source history. Reported origins
+and suggested graph links remain pending until reviewed. The dedicated split/merge
+contracts below support their respective cardinalities; ambiguous path candidates
+require explicit selection. Earlier evidence recorded under the one-to-one legacy
+renumbering contract keeps its original diagnostics and needs separate review.
+This is a simulator feature, not a physical cutting, weight or geometry model.
+
+
+### Reviewed material split and merge evidence (6.1.22)
+
+Material split/merge evidence requires the reviewed `manufacturing.material-traceability`1.2.0 schema package bundled with Controller2.2.12. In Solutions & packages, inspect the package upgrade impact, prepare and recheck the review, then explicitly execute the additive contract upgrade before exercising transformations. Existing renumbering contracts and historical edges are retained.
+
+- A split emits `split-from-material` evidence under `material-split` (one source, multiple outputs).
+- A merge emits `merge-from-materials` as one JSON-encoded predecessor list under `material-merge` (multiple sources, one output).
+- Normal process-location renumbering continues to emit `previous-material`.
+- All new transformation evidence is suggested. In UNS tree, open the material's Object ID menu → Details and review its relationships. An ambiguous identity requires choosing the concrete source path before accepting; a rejected suggestion does not select a path.
+
+The original source batch and inherited inspection provenance remain attached to split outputs. Old evidence is not automatically converted to a different relationship contract or approved in bulk. The simulator's split receipt still belongs to one in-memory run; after an unknown result, inspect the existing receipt rather than issuing a new command.
