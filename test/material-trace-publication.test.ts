@@ -115,3 +115,42 @@ test('split packets declare the source batch and label inherited inspection',asy
     UnsPacket.validateMessageComponents(undefined,table.table);
   }
 });
+
+test('actual split and merge declare every concrete input/output once, retained on replay',async()=>{
+  const {transport,packets}=capture();
+  const line=new HrmProductionLine({...config,simulationStartTime:time},[]);
+  const source=line.submitBatch({recipeId:config.recipes[0]!.id,materialId:'manifest-source',quantity:1});
+  for(let tick=0;tick<3000 && !['DONE','FAILED'].includes(line.getBatch(source.batchId)!.stage);tick++)line.tick(tick);
+  const split=line.splitMaterial({requestId:'manifest-split',sourceBatchId:source.batchId,outputMaterialIds:['manifest-b','manifest-c']});
+  assert.equal(split.ok,true);if(!split.ok)return;
+  const manifests:any[]=[];
+  for(const output of split.value.outputs){
+    const child=line.getBatch(output.batchId)!;
+    await transport.publishWarehouseState(config.productionLine.warehouse.assetId,config.topicBase,child,time);
+    await transport.publishWarehouseState(config.productionLine.warehouse.assetId,config.topicBase,child,'2026-10-04T12:00:01Z');
+    const evidence=packets.flatMap(p=>p.attributes).filter(a=>a.attribute==='split-from-material').at(-1);
+    UnsPacket.validateMessageComponents(evidence.data,undefined);
+    const envelope=JSON.parse(evidence.data.value);assert.equal(envelope.format,'uns.relationship-operation.v1');
+    assert.equal(envelope.value,'manifest-source-3');assert.equal(envelope.manifest.outputs.length,2);assert.equal(envelope.manifest.inputs.length,1);
+    assert.ok(envelope.manifest.outputs.some((e:any)=>e.objectId===`${output.materialId}-3`));
+    assert.ok(envelope.manifest.inputs[0].fullTopic.endsWith(`/${config.productionLine.warehouse.assetId}/material/manifest-source-3/`));
+    manifests.push(envelope.manifest);
+  }
+  assert.deepEqual(manifests[0],manifests[1]);assert.equal(manifests[0].operationId,split.value.operationId);
+  assert.deepEqual(line.splitMaterial({requestId:'manifest-split',sourceBatchId:source.batchId,outputMaterialIds:['manifest-b','manifest-c']}),split);
+  const mergeLine=new HrmProductionLine({...config,simulationStartTime:time},[]);
+  for(const materialId of ['manifest-i','manifest-j'])mergeLine.submitBatch({recipeId:config.recipes[0]!.id,materialId,quantity:1,mergeInputMaterialIds:['manifest-i','manifest-j'],mergeOutputMaterialId:'manifest-out'});
+  for(let tick=0;tick<3000 && !mergeLine.getState().completed.length;tick++)mergeLine.tick(tick);
+  const output=mergeLine.getBatch(mergeLine.getState().completed[0]!.batchId)!;
+  const manifest=output.operationManifest!;assert.equal(manifest.kind,'merge');assert.equal(manifest.inputs.length,2);assert.equal(manifest.outputs.length,1);
+  assert.ok(manifest.inputs.every(e=>e.fullTopic.includes(`/${config.productionLine.rollingStand.assetId}/material/`)));
+  await transport.publishWarehouseState(config.productionLine.warehouse.assetId,config.topicBase,output,time);
+  const evidence=packets.flatMap(p=>p.attributes).findLast(a=>a.attribute==='merge-from-materials');
+  const envelope=JSON.parse(evidence.data.value);assert.deepEqual(envelope.manifest,manifest);assert.deepEqual(JSON.parse(envelope.value),['manifest-i-2','manifest-j-2']);
+});
+
+
+test('published manifest producer declares its minimum Controller reader',()=>{
+  const pkg=JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url),'utf8'));
+  assert.equal(pkg.unsDatahub.controllerCompatibility,'>=2.2.13 <3');
+});

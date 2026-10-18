@@ -287,6 +287,7 @@ export interface HrmBatch {
   /** Original production start retained for tracing inherited measurements. */
   traceStartedAt?: string;
   splitReceipt?: MaterialSplitReceipt;
+  operationManifest?: MaterialOperationManifest;
 }
 
 // ─── API Request / Response ───────────────────────────────────────────────────
@@ -359,9 +360,20 @@ export interface MaterialSplitRequest {
   outputMaterialIds: [string, string];
 }
 export interface MaterialSplitReceipt extends MaterialSplitRequest {
+  operationId?: string;
   sourceMaterialId: string;
   splitAt: string;
   outputs: Array<{batchId: string; materialId: string; quantity: number}>;
 }
 export type MaterialSplitResult = {ok: true; value: MaterialSplitReceipt}
   | {ok: false; statusCode: 400 | 404 | 409; error: string};
+
+/** Complete immutable producer declaration; observation is not operator approval. */
+export interface MaterialOperationManifest {
+  version: 1;
+  operationId: string;
+  kind: "split" | "merge";
+  occurredAt: string;
+  inputs: Array<{objectType: "material"; objectId: string; fullTopic: string}>;
+  outputs: Array<{objectType: "material"; objectId: string; fullTopic: string}>;
+}

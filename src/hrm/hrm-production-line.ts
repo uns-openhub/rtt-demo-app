@@ -1,3 +1,4 @@
+import {buildUnsIdentityPath} from "@uns-kit/core/uns/uns-path.js";
 import type {ReviewedLifecycleRuntime} from './reviewed-lifecycle-runtime.js';
 import { randomUUID } from "crypto";
 import { logger } from "@uns-kit/core";
@@ -175,11 +176,15 @@ export class HrmProductionLine {
       return {ok: false, statusCode: 409, error: 'This request identifier belongs to another split.'};
     const now = this.currentSimulationIso();
     const outputs = req.outputMaterialIds.map(materialId => ({batchId: randomUUID(), materialId, quantity: source.quantity / 2}));
-    source.splitReceipt = {sourceBatchId: source.batchId, sourceMaterialId: source.materialId,
+    const operationManifest = {version: 1 as const, operationId: randomUUID(), kind: 'split' as const, occurredAt: now,
+      inputs: [this.operationEndpoint(this.config.productionLine.warehouse.assetId, `${source.materialId}-3`)],
+      outputs: outputs.map(o => this.operationEndpoint(this.config.productionLine.warehouse.assetId, `${o.materialId}-3`))};
+    source.splitReceipt = {operationId: operationManifest.operationId, sourceBatchId: source.batchId, sourceMaterialId: source.materialId,
       requestId: req.requestId, outputMaterialIds: [...req.outputMaterialIds], splitAt: now, outputs};
     for (const output of outputs) {
       const child: HrmBatch = { ...output, recipeId: source.recipeId, stage: 'WAREHOUSE', createdAt: now,
         stageEnteredAt: now, ticksInStage: 0, recipe: this.cloneRecipe(source.recipe), measured: structuredClone(source.measured),
+        operationManifest: structuredClone(operationManifest),
         warehouse: structuredClone(source.warehouse), splitSourceBatchId: source.batchId, splitSourceMaterialId: source.materialId,
         traceStartedAt: source.traceStartedAt ?? source.createdAt, previousMaterialObjectIds: [`${source.materialId}-3`]};
       this.batches.set(child.batchId, child); this.pendingSplitOutputs.push(child.batchId);
@@ -677,6 +682,11 @@ export class HrmProductionLine {
     return true;
   }
 
+  private operationEndpoint(assetId: string, objectId: string) {
+    return {objectType: 'material' as const, objectId,
+      fullTopic: buildUnsIdentityPath(this.config.topicBase, assetId, 'material', objectId) + '/'};
+  }
+
   private consumeRollingMergeInput(batch: HrmBatch, time: string): HrmBatch | undefined {
     if (!batch.mergeGroupId || !batch.mergeOutputMaterialId || !batch.mergeInputMaterialIds?.length) {
       return undefined;
@@ -722,6 +732,9 @@ export class HrmProductionLine {
       mergeInputMaterialIds: [...pending.inputMaterialIds],
       mergeOutputMaterialId: pending.outputMaterialId,
       previousMaterialObjectIds: pending.inputMaterialIds.map((materialId) => this.rollingMaterialObjectId(materialId)),
+      operationManifest: {version: 1, operationId: randomUUID(), kind: 'merge', occurredAt: time,
+        inputs: pending.inputMaterialIds.map(id => this.operationEndpoint(this.config.productionLine.rollingStand.assetId, this.rollingMaterialObjectId(id))),
+        outputs: [this.operationEndpoint(this.config.productionLine.warehouse.assetId, `${pending.outputMaterialId}-3`)]},
     };
     this.batches.set(outputBatch.batchId, outputBatch);
     logger.info(

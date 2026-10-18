@@ -302,7 +302,8 @@ export class MqttHrmTransport implements IHrmTransport {
         batchDataGroup: HRM_DATA_GROUPS.batch,
         materialId: batch.materialId,
         currentMaterialObjectId: this.materialObjectId(batch),
-        value,
+        value: batch.operationManifest && transformation !== 'renumbering'
+          ? JSON.stringify({format: 'uns.relationship-operation.v1', manifest: batch.operationManifest, value}) : value,
         ...(batch.mergeInputMaterialIds?.length ? { mergeInputMaterialIds: batch.mergeInputMaterialIds } : {}),
         ...(batch.mergeOutputMaterialId ? { mergeOutputMaterialId: batch.mergeOutputMaterialId } : {}),
       }),
