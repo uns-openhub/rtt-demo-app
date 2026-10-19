@@ -610,3 +610,29 @@ Finish that run or begin a separate demo dataset before introducing 6.1.24. Rest
 version/instance migration and power-loss/storage-controller guarantees are
 outside this slice. Existing HTTP authentication and route permissions remain
 required; result lookup grants no additional rights.
+
+### Publication pauses and retained material work
+
+The status API's optional `commandDurability` describes `ready`, `paused` or
+`blocked` execution. A configured external identity source must be reviewed and
+active before its evidence can be issued. The demo checks the configured station,
+cassette and roll paths before advancing. It never approves a source itself.
+
+A missing review, unavailable publication dependency or full4096-entry journal
+pauses new production work. Existing command results remain readable, and an
+identical accepted request ID still returns its saved result. Delivery retries
+with bounded backoff. After the dependency recovers, the same journal drains
+before simulation resumes. Reopening a compatible full v1 journal does not need
+a reset or a new instance. The operator UI links to the existing identity-source
+review and Micro services views.
+
+Preserve the instance directory, configuration and `hrm-runtime-state.json`.
+Do not delete the journal, change its checksum/config digest or create a new
+command ID to work around a pause. Delivery remains at least once: an ambiguous
+acknowledgement can replay an identical publication.
+
+An uncertain filesystem write remains `blocked`; publication retry cannot clear
+it. Preserve the journal, fix the storage/configuration issue, restart the same
+instance and inspect the original command result before submitting again.
+Corrupt or incompatible journals fail closed. The status contract contains safe
+reason codes, never raw remote error text or credentials.

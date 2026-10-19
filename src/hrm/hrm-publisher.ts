@@ -1,3 +1,4 @@
+import type {PublicationAsset} from "./publication-readiness.js";
 import type { BatchStage, DescalingPhysicsState, FurnacePhysicsState, HrmBatch, RollingPhysicsState } from "./hrm-types.js";
 import type UnsMqttProxy from "@uns-kit/core/uns-mqtt/uns-mqtt-proxy.js";
 import type {
@@ -95,6 +96,7 @@ export interface AlarmEvent {
 }
 
 export interface IHrmTransport {
+  checkPublicationReadiness?(assets: PublicationAsset[]): Promise<void>;
   /** Critical intents are acknowledged only after queued publishes complete. */
   flushCritical?(): Promise<void>;
   publishMobileCassette?(state: MobileCassetteSnapshot, time: string): Promise<void>;
@@ -166,6 +168,10 @@ export class MqttHrmTransport implements IHrmTransport {
     private readonly telemetryIntervalMs: number,
     private readonly identityProvider?: AssetIdentityPublicationProvider,
   ) {}
+
+  async checkPublicationReadiness(assets: PublicationAsset[]): Promise<void> {
+    for (const asset of assets) await this.identityProvider?.forAsset(asset.assetId, asset.topicBase);
+  }
 
   async flushCritical(): Promise<void> {
     await this.mqttOutput.flush(5000);

@@ -27,13 +27,13 @@ const transport = (
   new Proxy(
     {},
     {
-      get: (_o, key) =>
-        key === "publishMobileCassette"
+      get: (_o, key) => Reflect.get(_o, key) ?? (
+        (key === "publishMobileCassette" || key === "checkPublicationReadiness")
           ? undefined
           : async (...args: any[]) => {
               calls.push({ method: String(key), args: structuredClone(args) });
               if (fail) throw Error("bounded injected offline");
-            },
+            }),
     },
   ) as IHrmTransport;
 async function finish(
@@ -448,6 +448,7 @@ test("SDK enqueue alone does not acknowledge an intent when publisher drain fail
   );
   let r = await DurableMaterialRuntime.open(c, [t]);
   try {
+    await r.flushPublications();
     r.line.submitBatch({
       requestId: "drain-load",
       recipeId: "recipe-1",
@@ -544,4 +545,78 @@ test("API preserves unknown storage outcomes as503, separate from an ordinary ca
     );
     assert.equal(status, error instanceof MaterialCommandError ? 503 : 409);
   }
+});
+
+test("an unreviewed source pauses ticks and new work without touching the journal; review drains and resumes", async () => {
+  const {IdentitySourceReviewRequired} = await import('../src/hrm/publication-readiness.js');
+  const c = fixture(); let reviewed = false; const calls: any[] = [];
+  const t = transport(calls); t.checkPublicationReadiness = async () => { if (!reviewed) throw new IdentitySourceReviewRequired(); };
+  const r = await DurableMaterialRuntime.open(c, [t]);
+  try {
+    const original = fs.readFileSync(c.commandStateFile, 'utf8');
+    await r.flushPublications();
+    for (let i=0;i<100;i++) r.line.tick(i);
+    assert.equal(fs.readFileSync(c.commandStateFile,'utf8'), original);
+    assert.equal((r.line.getState() as any).commandDurability.reason, 'identity-review-required');
+    assert.throws(()=>r.line.submitBatch({requestId:'paused',recipeId:'recipe-1',materialId:'paused',quantity:1}), /paused/);
+    reviewed = true;
+    await new Promise(resolve=>setTimeout(resolve,2050));
+    await Promise.all([r.flushPublications(),r.flushPublications()]);
+    assert.equal((r.line.getState() as any).commandDurability.state,'ready');
+    const req={requestId:'resumed',recipeId:'recipe-1',materialId:'resumed',quantity:1};
+    const result=r.line.submitBatch(req);await r.flushPublications();
+    assert.deepEqual(r.line.submitBatch(req),result);
+    assert.equal((r.line.getState() as any).commandDurability.pendingPublications,0);
+  } finally { await r.close();fs.rmSync(path.dirname(c.commandStateFile),{recursive:true}); }
+});
+
+test("a full compatible v1 journal drains before accepting work, retaining receipts and the simulation checkpoint", async (context) => {
+  context.mock.method(fs,"fsyncSync",()=>undefined); // Pure ordering test; real filesystem durability is covered separately.
+  const {createHash}=await import('node:crypto');
+  const canonical=(v:any):any=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,x])=>[k,canonical(x)])):v;
+  const c=fixture();const calls:any[]=[];let r=await DurableMaterialRuntime.open(c,[transport(calls)]);
+  const req={requestId:'legacy-receipt',recipeId:'recipe-1',materialId:'legacy',quantity:1};const result=r.line.submitBatch(req);await r.flushPublications();await r.close();
+  const{checksum:_,...j}=JSON.parse(fs.readFileSync(c.commandStateFile,'utf8'));
+  j.outbox=Array.from({length:4096},(_,i)=>({id:'retained-'+i,target:0,method:'publishMaterialStatus',args:['retained-'+i]}));
+  fs.writeFileSync(c.commandStateFile,JSON.stringify({...j,checksum:createHash('sha256').update(JSON.stringify(canonical(j))).digest('hex')}));
+  calls.length=0;r=await DurableMaterialRuntime.open(c,[transport(calls)]);
+  try {
+    const checkpoint=JSON.parse(fs.readFileSync(c.commandStateFile,'utf8')).checkpoint;
+    const unchanged=fs.readFileSync(c.commandStateFile,'utf8');
+    r.line.tick(99); // Starts one drain but does not advance production.
+    assert.equal(fs.readFileSync(c.commandStateFile,'utf8'),unchanged);
+    assert.deepEqual(r.line.submitBatch(req),result);
+    await Promise.all([r.flushPublications(),r.flushPublications()]);
+    const after=JSON.parse(fs.readFileSync(c.commandStateFile,'utf8'));
+    assert.deepEqual(after.checkpoint,checkpoint);assert.equal(after.outbox.length,0);assert.deepEqual(after.receipts,j.receipts);
+    assert.deepEqual(calls.filter(c=>c.method==='publishMaterialStatus').map(c=>c.args[0]),j.outbox.map((i:any)=>i.args[0]));
+    assert.equal((r.line.getState() as any).commandDurability.state,'ready');
+  } finally {await r.close();fs.rmSync(path.dirname(c.commandStateFile),{recursive:true});}
+});
+
+test("paused publication keeps original command results readable and does not expose raw failure text", async () => {
+  const c=fixture();const t=transport([]);let fail=false;
+  t.flushCritical=async()=>{if(fail)throw Error('credential=must-never-appear');};
+  const r=await DurableMaterialRuntime.open(c,[t]);
+  try {
+    const req={requestId:'kept-result',recipeId:'recipe-1',materialId:'kept',quantity:1};
+    fail=true;const result=r.line.submitBatch(req);await r.flushPublications();
+    assert.deepEqual((r.line.materialCommandResult(req.requestId) as any).result,result);
+    assert.deepEqual(r.line.submitBatch(req),result);
+    const before=fs.readFileSync(c.commandStateFile,'utf8');for(let i=0;i<20;i++)r.line.tick(i);
+    assert.equal(fs.readFileSync(c.commandStateFile,'utf8'),before);
+    assert.equal((r.line.getState() as any).commandDurability.state,'paused');
+    assert.ok(!JSON.stringify(r.line.getState()).includes('must-never-appear'));
+  }finally{await r.close();fs.rmSync(path.dirname(c.commandStateFile),{recursive:true});}
+});
+
+test('a stuck readiness dependency is bounded and preserves the original journal',async(context)=>{
+  const c=fixture();const t=transport([]);t.checkPublicationReadiness=()=>new Promise<void>(()=>undefined);
+  const r=await DurableMaterialRuntime.open(c,[t]);
+  try{
+    const before=fs.readFileSync(c.commandStateFile,'utf8');context.mock.timers.enable({apis:['setTimeout']});
+    const work=r.flushPublications();context.mock.timers.tick(8001);await work;
+    assert.equal((r.line.getState() as any).commandDurability.reason,'publication-unavailable');
+    assert.equal(fs.readFileSync(c.commandStateFile,'utf8'),before);
+  }finally{context.mock.timers.reset();await r.close();fs.rmSync(path.dirname(c.commandStateFile),{recursive:true});}
 });
