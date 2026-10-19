@@ -11,6 +11,7 @@ import type { HrmProductionLine } from "./hrm/hrm-production-line.js";
 import { getBatchById, submitBatch } from "./hrm/services/batch-service.js";
 import { getRecipeById, getRecipes, updateRecipe } from "./hrm/services/recipe-service.js";
 import { getProductionLineState } from "./hrm/services/status-service.js";
+import {MaterialCommandError} from './hrm/durable-material-runtime.js';
 import { z } from "zod";
 
 export type AppApiContext = {
@@ -47,6 +48,7 @@ const batchSubmitSchema = defineDataCatalogSchema({
       required: true,
       example: "slab-001",
     }),
+    defineDataCatalogField('requestId', 'string', 'Stable command ID; reuse only for identical input, including after restart'),
     defineDataCatalogField("quantity", "number", "Number of units to produce", {
       required: true,
       example: 1,
@@ -58,7 +60,7 @@ const materialSplitSchema = defineDataCatalogSchema({
   id: 'hrm-material-split-request', title: 'Split completed material', contentType: 'application/json',
   fields: [
     defineDataCatalogField('sourceBatchId', 'string', 'Completed source batch UUID', {required: true}),
-    defineDataCatalogField('requestId', 'string', 'Unique command ID; reuse only for the identical request within this simulator run', {required: true}),
+    defineDataCatalogField('requestId', 'string', 'Unique command ID; reuse only for the identical request including after restart with the same instance journal', {required: true}),
     defineDataCatalogField('outputMaterialIds', 'array', 'Exactly two distinct, unused material identifiers; each receives half the source quantity', {required: true}),
   ],
 });
@@ -103,7 +105,7 @@ const cassetteMoveHandler: ApiHandler<"POST", AppApiContext> = async (event, {li
   try {
     event.res.json(line.moveRollCassette(parsed.data.location, parsed.data.expectedRevision, parsed.data.expectedRunId));
   } catch (error) {
-    event.res.status(409).json({error: (error as Error).message});
+    event.res.status(error instanceof MaterialCommandError ? error.statusCode : 409).json({error: (error as Error).message});
   }
 };
 
@@ -128,13 +130,14 @@ const batchGetHandler: ApiHandler<"GET", AppApiContext> = async (event, { line }
 };
 
 const batchPostHandler: ApiHandler<"POST", AppApiContext> = async (event, { line }) => {
-  const result = submitBatch(line, event.req.body as Record<string, unknown> | undefined);
-  if (!result.ok) {
-    event.res.status(400).json({ error: result.error });
-    return;
-  }
-
-  event.res.status(result.statusCode).json(result.value);
+  try {
+    const result = submitBatch(line, event.req.body as Record<string, unknown> | undefined);
+    if (!result.ok) {
+      event.res.status(400).json({ error: result.error });
+      return;
+    }
+    event.res.status(result.statusCode).json(result.value);
+  } catch (error) { materialCommandFailure(event.res, error); }
 };
 
 const recipesHandler: ApiHandler<"GET", AppApiContext> = async (event, { line }) => {
@@ -164,13 +167,14 @@ const recipePostHandler: ApiHandler<"POST", AppApiContext> = async (event, { lin
     return;
   }
 
-  const result = updateRecipe(line, recipeId, event.req.body as Record<string, unknown> | undefined);
-  if (!result.ok) {
-    event.res.status(400).json({ error: result.error });
-    return;
-  }
-
-  event.res.json(result.value);
+  try {
+    const result = updateRecipe(line, recipeId, event.req.body as Record<string, unknown> | undefined);
+    if (!result.ok) {
+      event.res.status(400).json({ error: result.error });
+      return;
+    }
+    event.res.json(result.value);
+  } catch (error) {materialCommandFailure(event.res,error);}
 };
 
 const reviewedActionHandler:ApiHandler<'POST',AppApiContext>=async(event,{line})=>{
@@ -184,13 +188,26 @@ const reviewedResultHandler:ApiHandler<'GET',AppApiContext>=async(event,{line})=
  try{event.res.json({result:line.reviewedActionResult(id),lifecycle:line.getState().reviewedLifecycle});}catch{event.res.status(409).json({error:'Reviewed lifecycle is not configured.'});}
 };
 const reviewedClosureHandler:ApiHandler<'POST',AppApiContext>=async(event,{line})=>{try{event.res.json(await line.closeReviewedAdoption(event.req.body));}catch{event.res.status(409).json({error:'Closure was rejected or its outcome is unknown. Retain the saved request and check its original operation result.'});}};
+function materialCommandFailure(res: {status(code: number): {json(body: unknown): unknown}}, error: unknown): void {
+  const known = error instanceof MaterialCommandError;
+  res.status(known ? error.statusCode : 503).json({error: known ? error.message : 'Material command outcome is unknown. Keep its request ID and check its result.'});
+}
+const materialCommandResultHandler: ApiHandler<'GET', AppApiContext> = async (event,{line}) => {
+  const id = getQueryParam(event.req,'requestId');
+  if (!id || id.length > 120 || !/^[A-Za-z0-9._:-]+$/.test(id)) {event.res.status(400).json({error:'A valid requestId is required.'}); return;}
+  try {event.res.json({result:line.materialCommandResult(id)});} catch (error) {materialCommandFailure(event.res,error);}
+};
 const splitMaterialHandler: ApiHandler<'POST', AppApiContext> = async (event, {line}) => {
-  const result = line.splitMaterial(event.req.body as MaterialSplitRequest);
-  if (!result.ok) { event.res.status(result.statusCode).json({error: result.error}); return; }
-  event.res.json(result.value);
+  try {
+    const result = line.splitMaterial(event.req.body as MaterialSplitRequest);
+    if (!result.ok) { event.res.status(result.statusCode).json({error: result.error}); return; }
+    event.res.json(result.value);
+  } catch (error) {materialCommandFailure(event.res,error);}
 };
 
 export const serviceApis = {
+  materialCommandResult: defineServiceApi({...hrmServiceRoute, attribute:'material-command-result', method:'GET',
+    description:'Read a saved material command result without executing it again; absence is not a cancellation', tags:['hrm'], handler:materialCommandResultHandler}),
   reviewedClosure:defineServiceApi({...hrmServiceRoute,attribute:'reviewed-lifecycle-close',method:'POST',description:'Durably close a pending adoption, preserving state and blocking late delivery',tags:['hrm'],handler:reviewedClosureHandler}),
   reviewedAction:defineServiceApi({...hrmServiceRoute,attribute:'reviewed-lifecycle-action',method:'POST',description:'Execute an explicitly pinned reviewed demo state/Action contract',tags:['hrm'],handler:reviewedActionHandler}),
   reviewedAdoption:defineServiceApi({...hrmServiceRoute,attribute:'reviewed-lifecycle-adopt',method:'POST',description:'Explicitly adopt the direct reviewed successor without resetting state',tags:['hrm'],handler:reviewedAdoptionHandler}),
@@ -254,7 +271,7 @@ export const serviceApis = {
   }),
   splitMaterial: defineServiceApi({
     ...hrmServiceRoute, attribute: 'material-split', method: 'POST',
-    description: 'Split one completed material into two new warehouse outputs; repeat the same requestId for a known result within this simulator run.',
+    description: 'Split one completed material into two new warehouse outputs; repeat the same requestId for a known result including after restart with the same instance journal.',
     tags: ['hrm'],
     requestBody: {required: true, contentType: 'application/json', description: 'Split a completed source without repeating production', schemas: [materialSplitSchema]},
     handler: splitMaterialHandler,

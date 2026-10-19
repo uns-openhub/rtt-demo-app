@@ -50,3 +50,7 @@ Thumbs.db
 # Package managers
 package-lock.json
 .claude/
+
+# Durable per-instance simulator state (never commit runtime data)
+hrm-runtime-state.json
+hrm-runtime-state.json.pending-*

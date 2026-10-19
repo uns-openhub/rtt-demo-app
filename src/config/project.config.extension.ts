@@ -102,6 +102,7 @@ const warehouseConfigSchema = assetConfigSchema;
 const queueConfigSchema = assetConfigSchema;
 
 const hrmSchema = z.object({
+  commandStateFile: z.string().min(1).optional().describe('Absolute instance-local material journal path; defaults to hrm-runtime-state.json in the process working directory'),
   reviewedLifecycle:z.object({contractFile:z.string().min(1),contractDigest:z.string().regex(/^sha256:[a-f0-9]{64}$/),stateFile:z.string().min(1),maintenanceState:z.string().min(1).default('maintenance')}).strict().optional(),
   topicBase: z.string().min(1),
   tickIntervalMs: z.number().int().positive().default(2000),

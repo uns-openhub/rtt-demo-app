@@ -1,3 +1,4 @@
+import {DurableMaterialRuntime} from './durable-material-runtime.js';
 import {ReviewedLifecycleRuntime} from './reviewed-lifecycle-runtime.js';
 import { logger } from "@uns-kit/core";
 import type UnsMqttProxy from "@uns-kit/core/uns-mqtt/uns-mqtt-proxy.js";
@@ -20,11 +21,15 @@ export async function initHrm(
   const transport = new MqttHrmTransport(mqttOutput, telemetryIntervalMs, identityProvider);
 
   const lifecycle=config.reviewedLifecycle?await ReviewedLifecycleRuntime.open(config.reviewedLifecycle):undefined;
-  const line = new HrmProductionLine(config, [transport],lifecycle);
+  const runtime = await DurableMaterialRuntime.open(config, [transport], lifecycle);
+  const line = runtime.line;
+  void runtime.flushPublications();
 
   let step = 0;
+  let reportedBlocked = false;
   setInterval(() => {
-    line.tick(step++);
+    try { line.tick(step++); }
+    catch { if (!reportedBlocked) logger.error('HRM material runtime blocked; preserve its journal, restart and verify command results.'); reportedBlocked = true; }
   }, tickIntervalMs);
 
   logger.info(

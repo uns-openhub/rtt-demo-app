@@ -41,7 +41,7 @@ export interface MobileCassetteSnapshot {
 
 /** Illustrative equipment physics; lifecycle and identity approval stay controller-owned. */
 export class MobileRollCassette {
-  private readonly runId = randomUUID();
+  private runId = randomUUID();
   private location: CassetteLocation;
   private revision = 1;
   private temperatureC = 22;
@@ -56,6 +56,18 @@ export class MobileRollCassette {
     private readonly standAssetId: string,
   ) {
     this.location = config.initialLocation ?? "stand";
+  }
+
+  checkpoint() {
+    return {runId: this.runId, location: this.location, revision: this.revision,
+      temperatureC: this.temperatureC, operatingSeconds: this.operatingSeconds,
+      vibrationMmS: this.vibrationMmS, speedMps: this.speedMps};
+  }
+  restoreCheckpoint(state: ReturnType<MobileRollCassette['checkpoint']>): void {
+    this.runId = state.runId; this.location = state.location; this.revision = state.revision;
+    this.temperatureC = state.temperatureC; this.operatingSeconds = state.operatingSeconds;
+    this.vibrationMmS = state.vibrationMmS; this.speedMps = state.speedMps;
+    this.publicationState = 'waiting';
   }
 
   get installed(): boolean { return this.location === "stand"; }

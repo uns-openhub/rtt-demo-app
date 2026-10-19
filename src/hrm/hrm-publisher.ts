@@ -95,6 +95,8 @@ export interface AlarmEvent {
 }
 
 export interface IHrmTransport {
+  /** Critical intents are acknowledged only after queued publishes complete. */
+  flushCritical?(): Promise<void>;
   publishMobileCassette?(state: MobileCassetteSnapshot, time: string): Promise<void>;
   /** Continuous station telemetry — published on the configured telemetry cadence while a station is active. */
   publishMaterialStatus(
@@ -164,6 +166,10 @@ export class MqttHrmTransport implements IHrmTransport {
     private readonly telemetryIntervalMs: number,
     private readonly identityProvider?: AssetIdentityPublicationProvider,
   ) {}
+
+  async flushCritical(): Promise<void> {
+    await this.mqttOutput.flush(5000);
+  }
 
   async publishMobileCassette(state: MobileCassetteSnapshot, time: string): Promise<void> {
     if (this.mobileAssetPath && this.mobileAssetPath !== state.cassette.assetPath) {

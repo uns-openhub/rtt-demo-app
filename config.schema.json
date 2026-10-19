@@ -1973,6 +1973,11 @@
         "hrm": {
           "type": "object",
           "properties": {
+            "commandStateFile": {
+              "description": "Absolute instance-local material journal path; defaults to hrm-runtime-state.json in the process working directory",
+              "type": "string",
+              "minLength": 1
+            },
             "reviewedLifecycle": {
               "type": "object",
               "properties": {

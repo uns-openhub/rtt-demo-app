@@ -96,6 +96,8 @@ export interface ProductionLineConfig {
 }
 
 export interface HrmConfig {
+  /** Local durable material runtime journal; defaults to hrm-runtime-state.json in the instance cwd. */
+  commandStateFile?: string | undefined;
   reviewedLifecycle?:ReviewedLifecycleConfig|undefined;
   topicBase: string;
   tickIntervalMs?: number;
@@ -293,6 +295,7 @@ export interface HrmBatch {
 // ─── API Request / Response ───────────────────────────────────────────────────
 
 export interface BatchSubmitRequest {
+  requestId?: string;
   recipeId: string;
   materialId: string;
   quantity: number;
