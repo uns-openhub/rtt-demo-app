@@ -84,10 +84,13 @@ function parseBatchSubmitRequest(body: Record<string, unknown> | undefined): Par
     return { ok: false, error: "mergeInputMaterialIds with at least two materials is required when mergeOutputMaterialId is provided" };
   }
 
+  const requestId = body?.['requestId'];
+  if (requestId !== undefined && (typeof requestId !== 'string' || !/^[A-Za-z0-9._-]{1,100}$/.test(requestId))) return {ok: false, error: 'requestId must contain 1 to 100 letters, numbers, dot, underscore or hyphen'};
   const value: BatchSubmitRequest = {
     recipeId,
     materialId,
     quantity,
+    ...(typeof requestId === 'string' ? {requestId} : {}),
   };
   if (repeatStage) {
     value.repeatStage = repeatStage as NonNullable<BatchSubmitRequest["repeatStage"]>;

@@ -30,7 +30,7 @@ export class HrmProductionLine {
   private readonly transports: IHrmTransport[];
   private readonly tickMs: number;
   private readonly effectiveTickMs: number;
-  private readonly simulationStartTimeIso: string;
+  private simulationStartTimeIso: string;
   private readonly realtimeClock: boolean;
   private currentSimulationTimeMs: number;
 
@@ -77,6 +77,58 @@ export class HrmProductionLine {
     this.rollingState = tickIdleRolling(undefined, this.config.productionLine.rollingStand, this.effectiveTickMs, this.rollingIdleStep);
     const cassette = config.productionLine.rollingStand.mobileCassette;
     this.mobileCassette = cassette ? new MobileRollCassette(cassette, config.topicBase, config.productionLine.rollingStand.assetId) : undefined;
+  }
+
+  /** Material/runtime checkpoint; the durable wrapper commits it before publication. */
+  checkpoint() {
+    return structuredClone({
+      simulationStartTimeIso: this.simulationStartTimeIso,
+      currentSimulationTimeMs: this.currentSimulationTimeMs,
+      furnaceState: this.furnaceState,
+      descalingState: this.descalingState,
+      rollingState: this.rollingState,
+      furnacePaceElapsedMin: this.furnacePaceElapsedMin,
+      furnaceTotalFuelConsumptionNm3: this.furnaceTotalFuelConsumptionNm3,
+      furnaceTotalPusherPushCount: this.furnaceTotalPusherPushCount,
+      descalingBatchId: this.descalingBatchId,
+      rollingBatchId: this.rollingBatchId,
+      warehouseBatchId: this.warehouseBatchId,
+      rollingPrevPass: this.rollingPrevPass,
+      furnaceIdleStep: this.furnaceIdleStep,
+      descalingIdleStep: this.descalingIdleStep,
+      rollingIdleStep: this.rollingIdleStep,
+      batches: [...this.batches.entries()], queue: [...this.queue], completed: [...this.completed],
+      pendingSplitOutputs: [...this.pendingSplitOutputs], pendingMerges: [...this.pendingMerges.entries()],
+      furnaceSlotBatchIds: [...this.furnaceSlotBatchIds], activeFurnaceAlarms: [...this.activeFurnaceAlarms],
+      recipes: this.config.recipes, mobileCassette: this.mobileCassette?.checkpoint(),
+    });
+  }
+
+  restoreCheckpoint(state: ReturnType<HrmProductionLine['checkpoint']>): void {
+    this.simulationStartTimeIso = state.simulationStartTimeIso;
+    this.currentSimulationTimeMs = state.currentSimulationTimeMs;
+    this.furnaceState = state.furnaceState;
+    this.descalingState = state.descalingState;
+    this.rollingState = state.rollingState;
+    this.furnacePaceElapsedMin = state.furnacePaceElapsedMin;
+    this.furnaceTotalFuelConsumptionNm3 = state.furnaceTotalFuelConsumptionNm3;
+    this.furnaceTotalPusherPushCount = state.furnaceTotalPusherPushCount;
+    this.descalingBatchId = state.descalingBatchId;
+    this.rollingBatchId = state.rollingBatchId;
+    this.warehouseBatchId = state.warehouseBatchId;
+    this.rollingPrevPass = state.rollingPrevPass;
+    this.furnaceIdleStep = state.furnaceIdleStep;
+    this.descalingIdleStep = state.descalingIdleStep;
+    this.rollingIdleStep = state.rollingIdleStep;
+    this.batches.clear(); for (const [id, batch] of state.batches) this.batches.set(id, batch);
+    this.queue.splice(0, this.queue.length, ...state.queue);
+    this.completed.splice(0, this.completed.length, ...state.completed);
+    this.pendingSplitOutputs.splice(0, this.pendingSplitOutputs.length, ...state.pendingSplitOutputs);
+    this.pendingMerges.clear(); for (const [id, pending] of state.pendingMerges) this.pendingMerges.set(id, pending);
+    this.furnaceSlotBatchIds.splice(0, this.furnaceSlotBatchIds.length, ...state.furnaceSlotBatchIds);
+    this.activeFurnaceAlarms.clear(); for (const alarm of state.activeFurnaceAlarms) this.activeFurnaceAlarms.add(alarm);
+    this.config.recipes.splice(0, this.config.recipes.length, ...state.recipes);
+    if (state.mobileCassette) this.mobileCassette?.restoreCheckpoint(state.mobileCassette);
   }
 
   submitBatch(req: BatchSubmitRequest): BatchSubmitResponse {
@@ -267,6 +319,8 @@ export class HrmProductionLine {
       completed: [...this.completed],
     };
   }
+
+  materialCommandResult(_requestId: string): unknown { throw Error('Durable material runtime is not configured.'); }
 
   getBatch(batchId: string): HrmBatch | undefined {
     return this.batches.get(batchId);

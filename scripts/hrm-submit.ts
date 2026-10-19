@@ -4,6 +4,7 @@
  *
  * Usage:  pnpm run hrm:submit
  */
+import {randomUUID} from "node:crypto";
 import {
   createAuthSession,
   createServiceTokenSession,
@@ -98,11 +99,14 @@ if (mergeOutputMaterialId) {
 
 const results: Array<Record<string, unknown>> = [];
 for (const currentMaterialId of materialIds) {
+  const requestId = randomUUID();
+  console.log(`  Command ${requestId} · ${currentMaterialId} (keep this ID if the response is lost)`);
   const result = await auth.apiPost(
     `system/hrm/service/${cfg.processName}/batch`,
     {
       recipeId,
       materialId: currentMaterialId,
+      requestId,
       quantity: 1,
       ...(repeatStage ? { repeatStage } : {}),
       ...(mergeOutputMaterialId ? { mergeOutputMaterialId, mergeInputMaterialIds: materialIds } : {}),

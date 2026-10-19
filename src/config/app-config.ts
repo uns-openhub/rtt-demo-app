@@ -157,6 +157,8 @@ export interface ProjectAppConfig {
         project?: string | undefined;
     } | undefined;
     hrm?: {
+        /** Absolute instance-local material journal path; defaults to hrm-runtime-state.json in the process working directory */
+        commandStateFile?: string | undefined;
         reviewedLifecycle?: {
             contractFile: string;
             contractDigest: string;

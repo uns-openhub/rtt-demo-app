@@ -314,7 +314,7 @@ curl -s -X POST "http://localhost:3200/api/system/hrm/service/rtt-demo-app/recip
   `WAREHOUSE` stage. Only then does the runtime batch become `DONE`/`FAILED`,
   preserving the actual visit interval for archived traces.
 - API/status payloads still expose the business `materialId` (`slab-001`) so external submit/query workflows do not need to know the UNS stage suffix.
-- A `materialId` identifies one material and must remain unique within retained demo history. The runtime rejects a duplicate within the current simulation process; after restarting the process, submit fresh material IDs or clear the previous demo dataset before reusing them.
+- A `materialId` identifies one material and must remain unique within retained demo history. Since 6.1.24, the instance journal retains material identities across restarts; keep using fresh material IDs for new production. Earlier releases do not have this durable journal.
 - `dataGroup` is storage/table routing metadata. In this demo it separates raw data by aggregate asset (`hrm_pusher_furnace`, `hrm_descaling`, `hrm_stand_1`, `hrm_warehouse`) and by dynamic sibling groups such as `batch` and `pass`; it is not used to model sub-asset hierarchy.
 - Sub-assets should be modeled by putting the full parent asset path in `topic`
   and the leaf sub-asset name in `asset`. For example, a separate service that
@@ -440,8 +440,8 @@ Housing/roll temperature, vibration and operating time follow rolling activity.
 Roll speed is derived from line speed and diameter. Illustrative wear increases
 with operating time; it is not an engineering wear prediction. Off-stand equipment
 cools toward ambient temperature and stops rotating. Moving never resets its
-external IDs, operating time, diameter or wear. Simulator restart resets this
-in-memory equipment model and creates a new run ID. The workshop does not yet
+external IDs, operating time, diameter or wear. Earlier releases reset this in-memory equipment model on restart. Version 6.1.24
+restores its run ID, readings and location from the same instance journal. The workshop does not yet
 simulate regrinding or replacement of an individual roll.
 
 Status GET includes `mobileCassette`. The authenticated service API accepts POST
@@ -480,10 +480,10 @@ entry/exit events with `splitSourceBatchId`, `splitSourceMaterialId`, and
 
 The registered POST service is `/api/system/hrm/service/rtt-demo-app/material-split`.
 Its body contains `sourceBatchId`, `requestId`, and exactly two `outputMaterialIds`.
-An identical request in the same simulator run returns the same receipt. Changed
-requests against a consumed source return409; invalid IDs return400 and an absent
-source404. Batches and receipts remain in memory: restart is not durable command
-recovery. An uncertain UI result blocks another split until its source receipt is
+An identical request returns the same receipt. Changed requests against a consumed
+source return409; invalid IDs return400 and an absent source404. Earlier releases
+keep batches and receipts in memory. Version 6.1.24 described below
+restores them from its durable instance journal after restart. An uncertain UI result blocks another split until its source receipt is
 read back. Recorded MQTT history remains independent of the command receipt.
 
 Trace each output to inspect its own visit and the source history. Reported origins
@@ -550,9 +550,10 @@ replays preserve reviewed evidence. Conflicting content with the same UUID is
 blocked for operator investigation. Old evidence without a manifest remains
 readable and individually reviewable, but cannot prove a complete operation.
 
-Simulator batches, split request replay and generated UUIDs remain scoped to the
-current simulator run. Durable simulator commands across restarts are separate
-work; this manifest does not make the simulator a durable production executor.
+Through 6.1.23, simulator batches, split request replay and generated UUIDs
+remain scoped to the current simulator run. Version 6.1.24 adds local
+restart persistence; the manifest alone does not make this industrial
+production execution software.
 
 
 Operator guide: [review a complete split or merge](https://www.uns-openhub.com/docs/guides/demo/materials-and-trace/).
@@ -560,3 +561,52 @@ Upgrade the readers first; if reverting a Controller below 2.2.13, stop this
 manifest-emitting producer beforehand. Stopping it does not convert archived
 manifest values back to older scalar evidence. Reviewed legacy conversion is a
 separate operation; do not overwrite history to force compatibility.
+
+
+### Durable material commands — since 6.1.24
+
+The ordinary simulator initialization opens `hrm-runtime-state.json` in the
+instance working directory. `hrm.commandStateFile` may select an explicit absolute
+path instead. Keep that directory/file with the instance. The journal contains
+synthetic material state, recipes, cassette readings, accepted command results and
+pending critical publications; it is runtime data and must not be committed.
+A single local writer is permitted. This is not cross-host handover or shared
+network-filesystem coordination.
+
+- POST `batch` accepts an optional `requestId` (1–100 letters, digits, dot,
+  underscore or hyphen). Repeating the same input and ID returns its original
+  batch response after restart. Changed input under that ID returns409. Older
+  clients without an ID use a deterministic per-material command identity.
+- POST `material-split` retains its existing required `requestId`. The source,
+  result, output batch IDs and full producer manifest are committed together.
+  Pending split outputs and partially consumed merges resume after restart.
+- GET `material-command-result?requestId=...` reads the saved command receipt
+  without running the command. A missing result is **not cancellation** of a
+  delayed request. Use the same input/ID if retrying; do not invent a replacement
+  ID because a response was lost. A legacy load result can be looked up as
+  `legacy-submit:<materialId>`.
+- API status/config includes `commandDurability` (state, pending publication
+  count and protocol). The CLI prints its generated command ID before sending.
+- Critical lifecycle/evidence publications are saved before transmission and
+  removed only after the transport and SDK publish-drain complete. Retry may
+  deliver identical timestamped events more than once; it does not create a new
+  business operation. This is not an archive-commit acknowledgment or an
+  exactly-once MQTT guarantee. Continuous equipment telemetry is not journaled.
+
+The journal is checksummed, written via fsync/atomic rename and configuration
+bound. Corrupt or incompatible journals block startup rather than reset history.
+A storage failure blocks further changes and returns503 with an unknown-outcome
+instruction; restart and check the **original** command result. A stale cassette
+move remains a normal conflict and does not stop the runtime.
+
+Limits are 2,000 retained batches, 4,096 command receipts, 4,096 pending critical
+publications and a 16 MiB journal. Old command IDs are never evicted to make a
+retry appear new. Hitting a limit requires operator review of the preserved
+instance; automatic pruning/migration is not provided. Interrupted `.pending-*`
+files are never treated as committed state and may remain for inspection.
+
+First start from an older release cannot recover its already-lost in-memory run.
+Finish that run or begin a separate demo dataset before introducing 6.1.24. Restarting with the same journal is tested; moving to another host,
+version/instance migration and power-loss/storage-controller guarantees are
+outside this slice. Existing HTTP authentication and route permissions remain
+required; result lookup grants no additional rights.
