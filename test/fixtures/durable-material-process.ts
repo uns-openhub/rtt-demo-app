@@ -12,8 +12,12 @@ const output = {
   flush: async () => undefined,
   publishMqttMessage: async (message: unknown) => {
     fs.appendFileSync(file + ".published", JSON.stringify(message) + "\n");
-    if (process.env["J16_HOLD_PUBLISH"] === "1")
+    if (process.env["J16_HOLD_PUBLISH"] === "1") {
+      // Let the parent kill this process only after the receiver observed the
+      // unacknowledged intent. HTTP completion alone does not prove publication.
+      process.send?.({kind: "publication-held"});
       await new Promise<void>(() => undefined);
+    }
   },
 };
 const line = await initHrm(

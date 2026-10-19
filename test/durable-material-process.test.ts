@@ -92,7 +92,9 @@ test("real child-process/API: lost load/split replies, SIGKILL, durable state an
       materialId: "process-source",
       quantity: 2,
     };
+    const publicationHeld = wait(p.child, "publication-held");
     await assert.rejects(call(p.base, "batch", load, true));
+    await publicationHeld;
     await kill(p.child);
     const recorded = JSON.parse(fs.readFileSync(file, "utf8"));
     const receipt = recorded.receipts.find(

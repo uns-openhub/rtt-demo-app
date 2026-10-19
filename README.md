@@ -78,7 +78,7 @@ The `hrm` section controls the simulator:
 | `recipes[]` | — | Rolling recipes (material, thickness, passes) |
 | `qualitySpecs[]` | — | Lab quality standards (independent of recipe) |
 
-When `simulationStartTime` is omitted, published MQTT and status/API timestamps follow realtime wall clock. When `simulationStartTime` is set, timestamps follow simulated process time from that anchor. `simulationSpeed` changes how fast physics and station progress advance per wall-clock tick; recipe values remain in normal process units.
+When `simulationStartTime` is omitted, process MQTT and status/API timestamps follow realtime wall clock. When `simulationStartTime` is set, process timestamps follow simulated process time from that anchor. Mobile cassette and roll measurements always use the wall-clock observation time, matching their identity and placement evidence; they never use the accelerated process timestamp. The MQTT observation time is captured after the three independent identity proofs are ready. A first packet published before its topic binding is registered remains unverified and excluded from identity history; later samples are not backdated or moved across location boundaries. `simulationSpeed` changes how fast physics and station progress advance per wall-clock tick; recipe values remain in normal process units.
 
 The development profiles use a 1s tick, 30x process speed, and full telemetry.
 Tune those values only in your untracked `config.json`; production deployments
