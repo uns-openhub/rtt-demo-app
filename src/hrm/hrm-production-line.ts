@@ -335,11 +335,14 @@ export class HrmProductionLine {
   moveRollCassette(location: CassetteLocation, expectedRevision: number, expectedRunId: string) {
     if (!this.mobileCassette) throw new Error("Movable roll equipment is not configured in this simulator.");
     this.mobileCassette.move(location, expectedRevision, expectedRunId, Boolean(this.rollingBatchId));
-    this.publishMobileCassette(this.currentSimulationIso());
+    this.publishMobileCassette();
     return this.mobileCassette.snapshot(Boolean(this.rollingBatchId));
   }
 
-  private publishMobileCassette(time: string): void {
+  private publishMobileCassette(): void {
+    // Placement proofs use the observation clock. Accelerated/fixed process time
+    // must not put equipment measurements outside their verified locations.
+    const time = new Date().toISOString();
     const equipment = this.mobileCassette;
     if (!equipment || equipment.publicationState === "sending" || Date.now() < this.mobilePublishRetryAt) return;
     const transports = this.transports.filter(t => t.publishMobileCassette);
@@ -1268,7 +1271,7 @@ export class HrmProductionLine {
       }
     }
 
-    this.publishMobileCassette(now);
+    this.publishMobileCassette();
 
     // Warehouse
     this.emitAssetMaterialOccupancy(

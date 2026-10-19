@@ -177,7 +177,7 @@ export class MqttHrmTransport implements IHrmTransport {
     await this.mqttOutput.flush(5000);
   }
 
-  async publishMobileCassette(state: MobileCassetteSnapshot, time: string): Promise<void> {
+  async publishMobileCassette(state: MobileCassetteSnapshot, _observationTime: string): Promise<void> {
     if (this.mobileAssetPath && this.mobileAssetPath !== state.cassette.assetPath) {
       // Complete old queued publications before withdrawing their active inventory.
       // Keep all other station topics; retirement never deletes UNS/history rows.
@@ -187,6 +187,15 @@ export class MqttHrmTransport implements IHrmTransport {
       this.mqttOutput.retainProducedTopics(this.producedTopics);
     }
     this.mobileAssetPath = state.cassette.assetPath;
+    const assets = [state.cassette, ...state.rolls];
+    if (!this.identityProvider) throw new Error("Movable equipment requires identity publication support.");
+    // Resolve every independent proof before observing this snapshot, so slow
+    // proof calls cannot backdate a new location's telemetry.
+    for (const asset of assets) {
+      const topic = asset.assetPath.slice(0, -(asset.assetId.length + 1));
+      if (!await this.identityProvider.forAsset(asset.assetId, topic)) throw new Error("Movable equipment has no configured identity.");
+    }
+    const time = new Date().toISOString();
     if (state.location !== "stand") {
       // The UNS receiver requires the base topic to exist. Register a location
       // Asset before its nested cassette, just as the stand publishes itself.
@@ -200,10 +209,8 @@ export class MqttHrmTransport implements IHrmTransport {
     }
     // Each leaf owns its own proof for its complete path, including both parents.
     // A parent's identity/proof must never be copied to either work roll.
-    for (const asset of [state.cassette, ...state.rolls]) {
-      if (!this.identityProvider) throw new Error("Movable equipment requires identity publication support.");
+    for (const asset of assets) {
       const topic = asset.assetPath.slice(0, -(asset.assetId.length + 1));
-      if (!await this.identityProvider.forAsset(asset.assetId, topic)) throw new Error("Movable equipment has no configured identity.");
       const numeric = (attribute: string, description: string, value: number, uom: string) => ({
         attribute, description, valueType: "number" as const,
         ...this.intervalValidity(), data: this.dataPayload(time, "hrm_mobile_equipment", {value, uom}),

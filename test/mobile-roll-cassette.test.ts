@@ -144,3 +144,91 @@ test("move endpoint validates destinations/run/revision and rejects arbitrary pa
   await handler({req:{body:{location:"store",expectedRevision:1,expectedRunId:current.runId}},res},{line,processName:"demo"});
   assert.equal(output.location,"store"); assert.equal(output.revision,2);
 });
+
+
+test("mobile observations use wall time across accelerated ticks, moves and checkpoint recovery", async (t) => {
+  const observedAt = Date.parse("2026-10-20T10:00:00.000Z");
+  t.mock.timers.enable({apis: ["Date"], now: observedAt});
+  const c = config();
+  c.simulationStartTime = "2020-01-01T00:00:00.000Z";
+  c.simulationSpeed = 60;
+  c.tickIntervalMs = 1000;
+  const publications: Array<{time: string; paths: string[]}> = [];
+  const transport = new Proxy({}, {
+    get: (_target, key) => key === "publishMobileCassette"
+      ? async (state: ReturnType<MobileRollCassette["snapshot"]>, time: string) => {
+          publications.push({time, paths: [state.cassette, ...state.rolls].map(a => a.assetPath)});
+        }
+      : async () => undefined,
+  });
+  const line = new HrmProductionLine(c, [transport as never]);
+  const settled = () => new Promise<void>(resolve => setImmediate(resolve));
+  line.tick(0);
+  await settled();
+  assert.equal(publications.at(-1)!.time, new Date(observedAt).toISOString());
+  assert.ok(line.getState().timestamp.startsWith("2020-"), "Process simulation retains its separate configured clock");
+  for (const location of ["store", "workshop", "stand"] as const) {
+    t.mock.timers.tick(1000);
+    const state = line.getState().mobileCassette!;
+    line.moveRollCassette(location, state.revision, state.runId);
+    await settled();
+    assert.equal(publications.at(-1)!.time, new Date(Date.now()).toISOString());
+    assert.equal(publications.at(-1)!.paths.length, 3);
+    assert.ok(publications.at(-1)!.paths.every(path => path.includes(location === "stand" ? "/hrm-stand-1/" : location === "store" ? "/hrm-roll-store/" : "/hrm-roll-workshop/")));
+  }
+  const checkpoint = line.checkpoint();
+  const original = structuredClone(checkpoint);
+  t.mock.timers.tick(60000);
+  const recovered = new HrmProductionLine(c, [transport as never]);
+  recovered.restoreCheckpoint(checkpoint);
+  recovered.tick(1);
+  await settled();
+  assert.equal(publications.at(-1)!.time, new Date(Date.now()).toISOString());
+  assert.equal(recovered.getState().mobileCassette!.runId, line.getState().mobileCassette!.runId);
+  assert.deepEqual(checkpoint, original, "Recovery never rewrites the retained checkpoint");
+  assert.ok(recovered.getState().timestamp.startsWith("2020-"));
+});
+
+test("fixed future process time cannot future-date mobile MQTT payloads", async (t) => {
+  t.mock.timers.enable({apis: ["Date"], now: Date.parse("2026-10-20T10:00:00Z")});
+  const {c} = fixture();
+  c.simulationStartTime = "2036-01-01T00:00:00Z";
+  c.simulationSpeed = 60;
+  const messages: any[] = [];
+  const output = {publishMqttMessage: async (message: unknown) => {messages.push(message);}, flush: async () => {}, retainProducedTopics: () => {}};
+  const provider = {forAsset: async () => ({assetStableEntityId: "asset", assetIdentityProof: "proof"})};
+  const transport = new MqttHrmTransport(output as never, 1000, provider as never);
+  const line = new HrmProductionLine(c, [transport]);
+  line.tick(0);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  const mobile = messages.filter(m => ["roll-cassette-001", "upper-work-roll-001", "lower-work-roll-001"].includes(m.asset));
+  assert.equal(mobile.length, 3);
+  for (const message of mobile) {
+    for (const attribute of message.attributes) {
+      assert.equal(attribute.data.time, new Date(Date.now()).toISOString());
+    }
+  }
+});
+
+
+test("all three first MQTT observations follow asynchronous identity evidence", async (t) => {
+  const start = Date.parse("2026-10-20T10:00:00.000Z");
+  t.mock.timers.enable({apis: ["Date"], now: start});
+  const {c, equipment} = fixture();
+  const issued: number[] = [], messages: any[] = [];
+  const provider = new AssetIdentityPublicationProvider({
+    issueAssetIdentityPublicationEvidenceByExternalIdentity: async (_identity: unknown, candidateAssetPath: string) => {
+      t.mock.timers.tick(1000);
+      issued.push(Date.now());
+      return {assetStableEntityId: "11111111-1111-4111-8111-111111111111", assetIdentityProof: "proof", candidateAssetPath, expiresAt: new Date(Date.now() + 120000).toISOString()};
+    },
+  } as never, c.productionLine);
+  const transport = new MqttHrmTransport({publishMqttMessage: async (m: unknown) => {messages.push(m);}, flush: async () => {}, retainProducedTopics: () => {}} as never, 1000, provider);
+  await transport.publishMobileCassette(equipment.snapshot(false), "2036-01-01T00:00:00Z");
+  assert.equal(issued.length, 3);
+  assert.equal(messages.length, 3);
+  for (const message of messages) for (const attribute of message.attributes) {
+    assert.equal(attribute.data.time, new Date(start + 3000).toISOString());
+    assert.ok(Date.parse(attribute.data.time) >= Math.max(...issued));
+  }
+});
