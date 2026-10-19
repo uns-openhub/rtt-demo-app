@@ -250,3 +250,12 @@ test("adds provider candidate evidence to the Asset publication without a stable
   assert.equal(published[0]?.assetProviderIdentityProof, "provider-proof-1");
   assert.equal(published[0]?.assetStableEntityId, undefined);
 });
+
+test('classifies the known source-review rejection without leaking arbitrary controller errors',async()=>{
+  const {IdentitySourceReviewRequired}=await import('../src/hrm/publication-readiness.js');
+  let message='The provider identity namespace has not been reviewed and activated.';
+  const p=new AssetIdentityPublicationProvider({issueAssetIdentityPublicationEvidenceByExternalIdentity:async()=>{throw Error(message);}},productionLine);
+  await assert.rejects(p.forAsset('hrm-furnace','canary/local'),IdentitySourceReviewRequired);
+  message='invalid service credentials';
+  await assert.rejects(p.forAsset('hrm-furnace','canary/local'),e=>!(e instanceof IdentitySourceReviewRequired));
+});

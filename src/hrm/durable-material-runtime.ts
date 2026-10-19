@@ -1,3 +1,5 @@
+import {setImmediate as yieldToIo} from "node:timers/promises";
+import {IdentitySourceReviewRequired, type PublicationAsset} from "./publication-readiness.js";
 import fs from "node:fs";
 import path from "node:path";
 import net from "node:net";
@@ -71,6 +73,7 @@ const digest = (value: unknown) =>
   createHash("sha256")
     .update(JSON.stringify(stable(value)))
     .digest("hex");
+class PublicationCapacityError extends Error {}
 export class MaterialCommandError extends Error {
   constructor(
     public readonly statusCode: 409 | 503,
@@ -92,14 +95,16 @@ export class DurableMaterialRuntime {
   private flushing: Promise<void> | undefined;
   private retryAt = 0;
   private failures = 0;
+  private publicationIssue: "checking" | "identity-review-required" | "publication-unavailable" | "queue-capacity" | "draining" | null = null;
 
   private constructor(
     private readonly file: string,
     private readonly lease: net.Server,
-    config: HrmConfig,
+    private readonly config: HrmConfig,
     private readonly transports: IHrmTransport[],
     lifecycle?: ReviewedLifecycleRuntime,
   ) {
+    if (transports.some(t => t.checkPublicationReadiness)) this.publicationIssue = "checking";
     const wrapped = transports.map(
       (transport, target) =>
         new Proxy(transport, {
@@ -110,17 +115,13 @@ export class DurableMaterialRuntime {
                   return Promise.reject(
                     new Error("Material publication outside a durable step."),
                   );
+                if (this.journal.outbox.length >= MAX_OUTBOX) throw new PublicationCapacityError();
                 this.journal.outbox.push({
                   id: randomUUID(),
                   target,
                   method: key as (typeof METHODS)[number],
                   args: json(args),
                 });
-                if (this.journal.outbox.length > MAX_OUTBOX)
-                  throw new MaterialCommandError(
-                    503,
-                    "Pending publication capacity reached.",
-                  );
                 return Promise.resolve();
               };
             if (
@@ -166,11 +167,13 @@ export class DurableMaterialRuntime {
               engine.splitMaterial(request),
             );
         if (key === "tick")
-          return () =>
-            this.transaction(() => {
+          return () => {
+            if (this.isPublicationPaused()) { void this.flushPublications(); return; }
+            return this.transaction(() => {
               engine.tick(this.journal.step);
               this.journal.step++;
             });
+          };
         if (key === "updateRecipe" || key === "moveRollCassette")
           return (...args: unknown[]) =>
             this.transaction(
@@ -184,7 +187,7 @@ export class DurableMaterialRuntime {
             );
         if (key === "materialCommandResult")
           return (id: string) => {
-            this.requireWritable();
+            this.requireReadable();
             return structuredClone(
               this.journal.receipts.find((r) => r.requestId === id) ?? null,
             );
@@ -197,8 +200,12 @@ export class DurableMaterialRuntime {
               [],
             ),
             commandDurability: {
-              state: this.blocked ? "blocked" : "ready",
+              state: this.blocked ? "blocked" : this.isPublicationPaused() ? "paused" : "ready",
+              reason: this.blocked ? "journal-unavailable" : this.publicationIssue ?? (this.journal.outbox.length >= MAX_OUTBOX ? "queue-capacity" : null),
               pendingPublications: this.journal.outbox.length,
+              maxPendingPublications: MAX_OUTBOX,
+              automaticRetry: !this.blocked,
+              retryAt: this.retryAt ? new Date(this.retryAt).toISOString() : null,
               protocol: 1,
             },
           });
@@ -411,7 +418,7 @@ export class DurableMaterialRuntime {
     request: unknown,
     perform: () => T,
   ): T {
-    this.requireWritable();
+    this.requireReadable();
     if (
       typeof requestId !== "string" ||
       (!/^legacy-submit:[A-Za-z0-9._-]{1,100}$/.test(requestId) &&
@@ -428,6 +435,7 @@ export class DurableMaterialRuntime {
         );
       return structuredClone(prior.result) as T;
     }
+    this.requireWritable();
     if (this.journal.receipts.length >= MAX_RECEIPTS)
       throw new MaterialCommandError(
         503,
@@ -447,7 +455,16 @@ export class DurableMaterialRuntime {
     });
   }
 
+  private isPublicationPaused(): boolean {
+    return this.publicationIssue !== null || this.journal.outbox.length >= MAX_OUTBOX;
+  }
+
   private requireWritable(): void {
+    this.requireReadable();
+    if (this.isPublicationPaused()) throw new MaterialCommandError(503, "Publication is paused. Resolve the reported dependency and wait for retained publications to drain. Keep the journal and original command IDs.");
+  }
+
+  private requireReadable(): void {
     if (this.closed || this.blocked)
       throw new MaterialCommandError(
         503,
@@ -469,6 +486,12 @@ export class DurableMaterialRuntime {
     } catch (error) {
       this.journal = before;
       this.transient = [];
+      if (error instanceof PublicationCapacityError) {
+        this.engine.restoreCheckpoint(before.checkpoint);
+        this.publicationIssue = "queue-capacity";
+        void this.flushPublications();
+        throw new MaterialCommandError(503, "Publication queue is full. Retained work will drain before simulation resumes; keep the journal.");
+      }
       // Cassette precondition checks throw before mutation. Keep its in-flight
       // publication flag; restoring a startup snapshot would falsely unlock it.
       if (rejectWithoutBlocking && !performed) throw error;
@@ -495,6 +518,27 @@ export class DurableMaterialRuntime {
     if (this.closed || this.blocked || Date.now() < this.retryAt)
       return Promise.resolve();
     this.flushing = (async () => {
+      const recovering = this.isPublicationPaused();
+      try {
+        const assets: PublicationAsset[] = Object.values(this.config.productionLine)
+          .filter(asset => asset && typeof asset.assetId === "string")
+          .map(asset => ({assetId: asset.assetId, topicBase: this.config.topicBase}));
+        const mobile = this.engine.getState().mobileCassette;
+        if (mobile) for (const asset of [mobile.cassette, ...mobile.rolls]) {
+          assets.push({assetId: asset.assetId, topicBase: asset.assetPath.slice(0, asset.assetPath.lastIndexOf("/"))});
+        }
+        for (const t of this.transports) {
+          if (!t.checkPublicationReadiness) continue;
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          try {
+            await Promise.race([t.checkPublicationReadiness(assets), new Promise<never>((_, reject) => {
+              timer = setTimeout(() => reject(new Error("Publication readiness timeout")), 8000);
+            })]);
+          } finally { if (timer) clearTimeout(timer); }
+        }
+      } catch (error) { this.recordPublicationFailure(error); return; }
+      if (recovering && this.journal.outbox.length) this.publicationIssue = "draining";
+      let drained = 0;
       while (!this.closed && !this.blocked && this.journal.outbox.length) {
         const intent = this.journal.outbox[0]!;
         try {
@@ -506,11 +550,8 @@ export class DurableMaterialRuntime {
             structuredClone(intent.args),
           );
           await this.transports[intent.target]!.flushCritical?.();
-        } catch {
-          this.failures++;
-          this.retryAt =
-            Date.now() +
-            Math.min(30_000, 1000 * 2 ** Math.min(this.failures, 5));
+        } catch (error) {
+          this.recordPublicationFailure(error);
           return;
         }
         if (this.closed || this.blocked) return;
@@ -523,11 +564,20 @@ export class DurableMaterialRuntime {
         }
         this.failures = 0;
         this.retryAt = 0;
+        // A full retained queue must not monopolize the status/API event loop.
+        if (++drained % 16 === 0) await yieldToIo();
       }
+      if (!this.closed && !this.blocked) { this.publicationIssue = null; this.failures = 0; this.retryAt = 0; }
     })().finally(() => {
       this.flushing = undefined;
     });
     return this.flushing;
+  }
+
+  private recordPublicationFailure(error: unknown): void {
+    this.publicationIssue = error instanceof IdentitySourceReviewRequired ? "identity-review-required" : "publication-unavailable";
+    this.failures++;
+    this.retryAt = Date.now() + Math.min(30_000, 1000 * 2 ** Math.min(this.failures, 5));
   }
 
   async close(): Promise<void> {

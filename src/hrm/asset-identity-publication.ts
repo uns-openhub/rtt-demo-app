@@ -1,3 +1,4 @@
+import {IdentitySourceReviewRequired} from "./publication-readiness.js";
 import type {
   AssetIdentityPublicationMetadata,
   AssetProviderIdentityPublicationMetadata,
@@ -91,10 +92,16 @@ export class AssetIdentityPublicationProvider {
     candidateAssetPath: string,
     assetDisplayName: string | undefined,
   ): Promise<CachedProof> {
-    const result = await this.client.issueAssetIdentityPublicationEvidenceByExternalIdentity(
-      identity,
-      candidateAssetPath,
-    );
+    let result;
+    try {
+      result = await this.client.issueAssetIdentityPublicationEvidenceByExternalIdentity(identity, candidateAssetPath);
+    } catch (error) {
+      // Classify only the controller's known rejection; never echo remote text.
+      if (error instanceof Error && error.message.includes("The provider identity namespace has not been reviewed and activated.")) {
+        throw new IdentitySourceReviewRequired();
+      }
+      throw error;
+    }
     if (this.normalizePath(result.candidateAssetPath) !== candidateAssetPath) {
       throw new Error("Controller returned an Asset identity proof for a different candidate path.");
     }

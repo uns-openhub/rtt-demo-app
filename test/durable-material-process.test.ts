@@ -33,7 +33,9 @@ async function start(file: string, hold = false) {
       stdio: ["ignore", "ignore", "pipe", "ipc"],
     },
   );
-  child.stderr?.on("data", () => undefined);
+  let errors = "";
+  child.stderr?.on("data", chunk => { errors = (errors + String(chunk)).slice(-8000); });
+  child.on("exit", (code, signal) => { if (code && signal !== "SIGKILL") console.error(errors); });
   const { port } = await wait(child, "ready");
   return {
     child,
@@ -57,6 +59,7 @@ async function call(
     method: body === undefined ? "GET" : "POST",
     headers: {
       "content-type": "application/json",
+      "connection": "close",
       ...(drop ? { "x-j16-drop-response": "1" } : {}),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -67,6 +70,15 @@ async function tick(child: ChildProcess, count: number) {
   const ready = wait(child, "ticked");
   child.send({ kind: "tick", count });
   await ready;
+}
+
+async function waitForDelivery(base: string) {
+  for (let n=0;n<150;n++) {
+    const state=await (await call(base,"status")).json();
+    if(state.commandDurability.state === "ready") return;
+    await new Promise(resolve=>setTimeout(resolve,100));
+  }
+  throw Error("Retained publications did not drain");
 }
 
 test("real child-process/API: lost load/split replies, SIGKILL, durable state and identical publisher replay", async () => {
@@ -88,13 +100,15 @@ test("real child-process/API: lost load/split replies, SIGKILL, durable state an
     );
     assert.ok(receipt);
     const id = receipt.result.batchId;
-    p = await start(file, true);
+    // Restore delivery before advancing production: a retained queue now pauses admission.
+    p = await start(file);
     const replay = await (await call(p.base, "batch", load)).json();
     assert.deepEqual(replay, receipt.result);
     assert.equal(
       (await call(p.base, "batch", { ...load, quantity: 3 })).status,
       409,
     );
+    await waitForDelivery(p.base);
     await tick(p.child, 80);
     const source = await (await call(p.base, "batch?batchId=" + id)).json();
     assert.ok(["DONE", "FAILED"].includes(source.stage));
@@ -118,6 +132,7 @@ test("real child-process/API: lost load/split replies, SIGKILL, durable state an
       await (await call(p.base, "material-split", split)).json(),
       saved,
     );
+    await waitForDelivery(p.base);
     await tick(p.child, 15);
     const state = await (await call(p.base, "status")).json();
     assert.equal(state.completed.length, 3);
