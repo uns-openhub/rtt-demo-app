@@ -251,8 +251,20 @@ export class DurableMaterialRuntime {
       lifecycle,
     );
     try {
-      const { commandStateFile: _ignored, ...pinnedConfig } = config;
+      const { commandStateFile: _ignored, ...legacyPinnedConfig } = config;
+      const { reviewedLifecycle, ...materialConfig } = legacyPinnedConfig;
+      // Offering a separately reviewed lifecycle successor must not invalidate
+      // material jobs/outbox. Keep its journal identity and maintenance policy
+      // pinned; the lifecycle runtime independently validates file + digest.
+      const pinnedConfig = {
+        ...materialConfig,
+        ...(reviewedLifecycle ? { reviewedLifecycle: {
+          stateFile: reviewedLifecycle.stateFile,
+          maintenanceState: reviewedLifecycle.maintenanceState,
+        } } : {}),
+      };
       const configDigest = digest(pinnedConfig);
+      const legacyConfigDigest = digest(legacyPinnedConfig);
       let stored: unknown;
       try {
         const stat = fs.lstatSync(file);
@@ -279,7 +291,7 @@ export class DurableMaterialRuntime {
         if (
           checksum !== digest(journal) ||
           journal.version !== 1 ||
-          journal.configDigest !== configDigest ||
+          (journal.configDigest !== configDigest && journal.configDigest !== legacyConfigDigest) ||
           journal.transportCount !== transports.length
         )
           throw Error(
@@ -288,6 +300,13 @@ export class DurableMaterialRuntime {
         runtime.validate(journal);
         runtime.journal = journal;
         runtime.engine.restoreCheckpoint(journal.checkpoint);
+        // A legacy pin can be upgraded only after the exact old full config,
+        // checksum, checkpoint and transport count have all validated. A changed
+        // config cannot authorize this conversion; restart unchanged once first.
+        if (journal.configDigest !== configDigest) {
+          runtime.journal.configDigest = configDigest;
+          runtime.save();
+        }
       } else {
         runtime.journal = {
           version: 1,

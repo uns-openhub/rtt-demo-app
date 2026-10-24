@@ -251,3 +251,23 @@ request as a new operation, or downgrade the package as a recovery shortcut.
 The default profiles are unchanged, but that does not make opted-in state
 backward compatible. Single-host storage, bounded receipt capacity, manual file
 delivery, tab-scoped recovery and undeclared external-consumer limits remain.
+
+## Material journal and successor file pins (6.1.27)
+
+The material journal keeps jobs, receipts and pending MQTT publications; the
+lifecycle journal independently keeps the accepted contract and state. A change
+of `reviewedLifecycle.contractFile` and its independently verified
+`contractDigest` must not reset the material journal. Its namespace, production
+configuration, lifecycle `stateFile`, maintenance policy and transport count stay
+pinned. A new offered file still requires explicit lifecycle adoption.
+
+Older demo builds pinned the entire lifecycle configuration inside the material
+journal. Before changing the offered file or digest, install demo 6.1.27 or newer and restart **once with the exact previous
+configuration**. Only a valid
+checksum and exact old full configuration allow conversion to the narrower pin.
+The checkpoint, receipts and outbox are retained. Then stop that same instance,
+copy the reviewed successor to a distinct file, change only the offered file and
+trusted digest, and restart. If the old configuration was already changed,
+restore it first; preserve both journals. A mismatch or corrupt journal remains
+blocked. Do not delete it or edit its digest to force startup. This correction starts in 6.1.27; the original 6.1.26 artifact requires the
+unchanged-config restart with the updated binary before changing the offer.

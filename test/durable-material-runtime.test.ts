@@ -3,6 +3,7 @@ import test from "node:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import {
   DurableMaterialRuntime,
   MaterialCommandError,
@@ -619,4 +620,65 @@ test('a stuck readiness dependency is bounded and preserves the original journal
     assert.equal((r.line.getState() as any).commandDurability.reason,'publication-unavailable');
     assert.equal(fs.readFileSync(c.commandStateFile,'utf8'),before);
   }finally{context.mock.timers.reset();await r.close();fs.rmSync(path.dirname(c.commandStateFile),{recursive:true});}
+});
+
+
+test("a reviewed lifecycle offer can change without losing material jobs, receipts or pending publications", async () => {
+  const c = {...fixture(), reviewedLifecycle: {
+    contractFile: "/local/accepted.json", contractDigest: `sha256:${"a".repeat(64)}`,
+    stateFile: "/local/lifecycle-journal.json", maintenanceState: "maintenance",
+  }};
+  let r = await DurableMaterialRuntime.open(c, [transport([], true)]);
+  try {
+    const request = {requestId: "retained-offer", recipeId: "recipe-1", materialId: "retained", quantity: 1};
+    const result = r.line.submitBatch(request);
+    await r.close();
+    const before = JSON.parse(fs.readFileSync(c.commandStateFile, "utf8"));
+    assert.ok(before.outbox.length > 0);
+    const successor = structuredClone(c);
+    successor.reviewedLifecycle.contractFile = "/local/successor.json";
+    successor.reviewedLifecycle.contractDigest = `sha256:${"b".repeat(64)}`;
+    r = await DurableMaterialRuntime.open(successor, [transport([], true)]);
+    assert.deepEqual(r.line.submitBatch(request), result);
+    const after = JSON.parse(fs.readFileSync(c.commandStateFile, "utf8"));
+    assert.deepEqual(after, before);
+    await r.close();
+    await assert.rejects(DurableMaterialRuntime.open({...successor, reviewedLifecycle: {
+      ...successor.reviewedLifecycle, stateFile: "/local/replacement-journal.json",
+    }}, [transport([], true)]), /incompatible/);
+    await assert.rejects(DurableMaterialRuntime.open({...successor, topicBase: "different/namespace"}, [transport([], true)]), /incompatible/);
+    assert.deepEqual(JSON.parse(fs.readFileSync(c.commandStateFile, "utf8")), before);
+  } finally {
+    await r.close();fs.rmSync(path.dirname(c.commandStateFile), {recursive:true});
+  }
+});
+
+test("legacy lifecycle pins upgrade only with unchanged full configuration and a valid intact journal", async () => {
+  const c = {...fixture(), reviewedLifecycle: {
+    contractFile: "/local/original.json", contractDigest: `sha256:${"a".repeat(64)}`,
+    stateFile: "/local/lifecycle.json", maintenanceState: "maintenance",
+  }};
+  let r = await DurableMaterialRuntime.open(c, [transport([], true)]);
+  const stable = (value:any):any => Array.isArray(value) ? value.map(stable) : value && typeof value === "object"
+    ? Object.fromEntries(Object.entries(value).filter(([,v]) => v !== undefined).sort(([a],[b]) => a.localeCompare(b)).map(([k,v]) => [k,stable(v)])) : value;
+  const hash = (value:unknown) => createHash("sha256").update(JSON.stringify(stable(value))).digest("hex");
+  try {
+    const request={requestId:"legacy-retained",recipeId:"recipe-1",materialId:"legacy",quantity:1};
+    const result=r.line.submitBatch(request);await r.close();
+    const {checksum: _checksum, ...legacy}=JSON.parse(fs.readFileSync(c.commandStateFile,"utf8"));
+    const {commandStateFile:_file,...oldConfig}=c;legacy.configDigest=hash(oldConfig);
+    fs.writeFileSync(c.commandStateFile,JSON.stringify({...legacy,checksum:hash(legacy)}));
+    const original=fs.readFileSync(c.commandStateFile,"utf8");
+    const successor={...c,reviewedLifecycle:{...c.reviewedLifecycle,contractFile:"/local/next.json",contractDigest:`sha256:${"b".repeat(64)}`}};
+    await assert.rejects(DurableMaterialRuntime.open(successor,[transport([],true)]),/incompatible/);
+    assert.equal(fs.readFileSync(c.commandStateFile,"utf8"),original);
+    r=await DurableMaterialRuntime.open(c,[transport([],true)]);await r.close();
+    const migrated=JSON.parse(fs.readFileSync(c.commandStateFile,"utf8"));
+    assert.notEqual(migrated.configDigest,legacy.configDigest);
+    for(const key of ["checkpoint","receipts","outbox","step","transportCount"])assert.deepEqual(migrated[key],legacy[key]);
+    r=await DurableMaterialRuntime.open(successor,[transport([],true)]);
+    assert.deepEqual(r.line.submitBatch(request),result);await r.close();
+    fs.writeFileSync(c.commandStateFile,JSON.stringify({...migrated,checksum:"corrupt"}));
+    await assert.rejects(DurableMaterialRuntime.open(successor,[transport([],true)]),/corrupt/);
+  } finally {await r.close();fs.rmSync(path.dirname(c.commandStateFile),{recursive:true});}
 });
